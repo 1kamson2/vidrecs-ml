@@ -54,6 +54,6 @@ main() {
   fi
 
   echo "[INFO] Running."
-  python3 "./src/main.py" "$DATABASE_NAME" "$USERNAME" $db_exists true
+  python3 "src/main.py" "$DATABASE_NAME" "$USERNAME" $db_exists true
 }
 main
