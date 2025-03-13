@@ -7,10 +7,6 @@ from pathlib import Path
 class Database:
     def __init__(self, name: str, user: str, host: str = "127.0.0.1", port: int 
                  = 5432):
-        """
-            TODO: Titles appear to be very long.
-            TODO: Make better errors.
-        """
         self.name: str = name
         self.user: str = user
         self.host: str = host 
@@ -22,7 +18,7 @@ class Database:
         +--------+---------+--------------+--------+---------+-------------+
         |   id   | imdbid  |    title     | genres | ratings | users_rated |
         +--------+---------+--------------+--------+---------+-------------+
-        | SERIAL | SERIAL  |   VARCHAR    | TEXT[] | REAL    | SERIAL      |
+        | SERIAL | SERIAL  | VARCHAR(128) | TEXT[] | REAL    | SERIAL      |
         +--------+---------+--------------+--------+---------+-------------+
               ^---- PRIMARY KEY
             Furthermore, your dataset should be csv, with the following
@@ -44,7 +40,7 @@ class Database:
                 create_table_query = """CREATE TABLE {tablename} ( 
                     id SERIAL PRIMARY KEY,
                     imdbid SERIAL,
-                    title VARCHAR,
+                    title VARCHAR(128),
                     genres TEXT[],
                     ratings REAL,
                     users_rated SERIAL
@@ -53,66 +49,6 @@ class Database:
             except IOError as e:
                 print(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
                 exit(1) 
-
-            try:
-                # --- Load movies into the database --- #
-                print("[INFO] table_init(): Loading all movies.")
-                # --- TODO: Keep this paths in json files (or TOML) and
-                # read it to Path(...) --- #
-                csv_files = list(Path("./resource/").glob("*.csv")) 
-                # --- TODO: Make nicer logging --- #
-                print(f"[INFO] Found those files:\n{csv_files}")
-                movies_data = dict() 
-
-                if Path("resource/links.csv") not in csv_files:
-                    print("[ERROR] links.csv wasn't found.")
-                    exit(1)
-
-                link_df = pd.read_csv("resource/links.csv", sep=',', skiprows=0)
-                for relation in link_df.itertuples(index=False, name=None):
-                    movieid, imdbid, *_ = relation
-                    entry = [0 for _ in range(6)]
-                    entry[0] = movieid
-                    entry[1] = imdbid
-                    movies_data[movieid] = entry
-                # --- Drop the reference --- #
-                del link_df
-
-                if Path("resource/movies.csv") not in csv_files:
-                    print("[ERROR] links.csv wasn't found.")
-                    exit(1)
-
-                movies_df = pd.read_csv("resource/movies.csv", sep=',', skiprows=0)
-                for relation in movies_df.itertuples(index=False, name=None):
-                    movieid, title, genres = relation
-                    # --- Get entry info --- #
-                    entry = movies_data[movieid]
-                    entry[2] = title.rstrip() 
-                    entry[3] = genres.split('|') 
-                    # --- Replace with new entry --- #
-                    movies_data[movieid] = entry
-
-                del movies_df
-
-                if Path("resource/ratings.csv") not in csv_files:
-                    print("[ERROR] ratings.csv wasn't found.")
-                    exit(1)
-
-                ratings_df = pd.read_csv("resource/ratings.csv", sep=',', skiprows=0)
-                for relation in ratings_df.itertuples(index=False, name=None):
-                    _, movieid, rating, _ = relation
-                    # --- Get entry info --- #
-                    entry = movies_data[movieid]
-                    entry[4] += rating 
-                    entry[5] += 1 
-                    # --- Replace with new entry --- #
-                    movies_data[movieid] = entry
-                del ratings_df
-                # TODO: For now skipping the tags.csv
-                
-            except IOError as e:
-                print(e)
-                exit(1)
 
             try:
                 with psycopg.connect(dbname=self.name, 
@@ -125,14 +61,75 @@ class Database:
                                                      ratings, users_rated)
                                                      VALUES(%s, %s, %s,
                                                      %s, %s, %s)"""
-                        print("[INFO] Here are 10 elements of your dataset.")
-                        for k, v in movies_data.items():
-                            if k > 10:
-                                break
-                            print(f"key: {k} value: {v}")
 
-                        for relation in movies_data.values():
-                            cur.execute(query, relation)
+                        # --- Load movies into the database --- #
+                        print("[INFO] table_init(): Loading all movies.")
+                        # --- TODO: Keep this paths in json files (or TOML) and
+                        # read it to Path(...) --- #
+                        csv_files = list(Path("./resource/").glob("*.csv")) 
+                        print(f"[INFO] Found those files:\n{csv_files}")
+                        movies_data = dict() 
+
+                        if Path("resource/links.csv") not in csv_files:
+                            print("[ERROR] links.csv wasn't found.")
+                            exit(1)
+
+                        link_df = pd.read_csv("resource/links.csv", sep=',', skiprows=0)
+                        for relation in link_df.itertuples(index=False, name=None):
+                            movieid, imdbid, *_ = relation
+                            entry = [0 for _ in range(6)]
+                            entry[0] = movieid
+                            entry[1] = imdbid
+                            movies_data[movieid] = entry
+                        # --- Drop the reference --- #
+                        del link_df
+
+                        if Path("resource/movies.csv") not in csv_files:
+                            print("[ERROR] links.csv wasn't found.")
+                            exit(1)
+
+                        movies_df = pd.read_csv("resource/movies.csv", sep=',', skiprows=0)
+                        for relation in movies_df.itertuples(index=False, name=None):
+                            movieid, title, genres = relation
+                            # --- Get entry info --- #
+                            entry = movies_data[movieid]
+                            entry[2] = title 
+                            entry[3] = genres.split('|') 
+                            # --- Replace with new entry --- #
+                            movies_data[movieid] = entry
+
+                        del movies_df
+
+                        if Path("resource/ratings.csv") not in csv_files:
+                            print("[ERROR] ratings.csv wasn't found.")
+                            exit(1)
+
+                        ratings_df = pd.read_csv("resource/ratings.csv", sep=',', skiprows=0)
+                        for relation in ratings_df.itertuples(index=False, name=None):
+                            _, movieid, rating, _ = relation
+                            # --- Get entry info --- #
+                            entry = movies_data[movieid]
+                            entry[4] += rating 
+                            entry[5] += 1 
+                            # --- Replace with new entry --- #
+                            movies_data[movieid] = entry
+                        del ratings_df
+                        # TODO: For now skipping the tags.csv
+                        
+            except IOError as e:
+                print(e)
+                exit(1)
+
+            try:
+                print("[INFO] Here are 10 elements of your dataset.")
+                for k, v in movies_data.items():
+                    if k == 10:
+                        break
+                    print(f"key: {k} value: {v}")
+
+                for relation in movies_data.values():
+                    cur.execute(query, relation)
+
             except IOError as e:
                 print(e)
                 exit(1)
