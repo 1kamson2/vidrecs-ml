@@ -2,21 +2,37 @@ from typing import List
 import psycopg
 import pandas as pd
 from psycopg.errors import IoError
-from pathlib import Path
 
 class Database:
-    def __init__(self, name: str, user: str, host: str = "127.0.0.1", port: int 
-                 = 5432):
+    cls_name = "Database"
+    table_init_query = """CREATE TABLE {tablename} ( 
+                    id SERIAL PRIMARY KEY,
+                    imdbid SERIAL,
+                    title VARCHAR,
+                    genres TEXT[],
+                    ratings REAL,
+                    users_rated SERIAL
+                    )"""
+    insert_into_query = """INSERT INTO movies(id, imdbid, title, genres,
+     ratings, users_rated) VALUES(%s, %s, %s, %s, %s, %s)"""
+    table_exists_query = "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
+
+    def __init__(self, **config):
         """
             TODO: Titles appear to be very long.
             TODO: Make better errors.
+            TODO: get rid of unnecessary parameters and functions, e.g.:
+            update_db etc. For example you could do *args, the first one would
+            be query, the rest is batch or some other data, that should be
+            passed to execute. Keep in mind to check if injection occurrs.
         """
-        self.name: str = name
-        self.user: str = user
-        self.host: str = host 
-        self.port: int = port  
+        self.config = config
+        self.name: str = config["name"] 
+        self.user: str = config["user"] 
+        self.host: str = config["host"] 
+        self.port: int = config["port"]  
 
-    def table_init(self, tablename: str = "movies")->None: 
+    def table_init(self)->None: 
         """
                                     tablename
         +--------+---------+--------------+--------+---------+-------------+
@@ -27,29 +43,21 @@ class Database:
               ^---- PRIMARY KEY
             Furthermore, your dataset should be csv, with the following
             structure:
-                --> links.csv: movieid, imdbid, tmdbid (up to two sources of
+                - links.csv: movieid, imdbid, tmdbid (up to two sources of
                 movie ids)
-                --> movies.csv: movieid, title, genres
-                --> ratings.csv: userid, movieid, rating, timestamp
-                --> tags.csv: userid, movieid, tag, timestamp
+                - movies.csv: movieid, title, genres
+                - ratings.csv: userid, movieid, rating, timestamp
+                - tags.csv: userid, movieid, tag, timestamp
             Preferably the user, should pass with those names and shouldn't be
             changed.
             We can calculate rating easily.
         """
-        if not self.exists(tablename):
-            print("[INFO] table_init(): Table doesn't exist. Creating one")
+        if not self.exists(self.config["tablename"]):
+            print("[INFO] table_init(): Table doesn't exist, making one.")
             try:
                 # --- TODO: probably should make construct_query to handle some bad
                 # injections etc --- # 
-                create_table_query = """CREATE TABLE {tablename} ( 
-                    id SERIAL PRIMARY KEY,
-                    imdbid SERIAL,
-                    title VARCHAR,
-                    genres TEXT[],
-                    ratings REAL,
-                    users_rated SERIAL
-                    )""".format(tablename=tablename) 
-                self.make_query(query=create_table_query)
+                self.make_query(query=self.table_init_query.format(tablename=self.config["tablename"]))
             except IOError as e:
                 print(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
                 exit(1) 
@@ -57,18 +65,14 @@ class Database:
             try:
                 # --- Load movies into the database --- #
                 print("[INFO] table_init(): Loading all movies.")
-                # --- TODO: Keep this paths in json files (or TOML) and
-                # read it to Path(...) --- #
-                csv_files = list(Path("./resource/").glob("*.csv")) 
-                # --- TODO: Make nicer logging --- #
-                print(f"[INFO] Found those files:\n{csv_files}")
+                csv_files = list(self.config["resource"].glob("*.csv")) 
                 movies_data = dict() 
 
-                if Path("resource/links.csv") not in csv_files:
+                if self.config["links"] not in csv_files:
                     print("[ERROR] links.csv wasn't found.")
                     exit(1)
 
-                link_df = pd.read_csv("resource/links.csv", sep=',', skiprows=0)
+                link_df = pd.read_csv(self.config["links"], sep=',', skiprows=0)
                 for relation in link_df.itertuples(index=False, name=None):
                     movieid, imdbid, *_ = relation
                     entry = [0 for _ in range(6)]
@@ -78,11 +82,11 @@ class Database:
                 # --- Drop the reference --- #
                 del link_df
 
-                if Path("resource/movies.csv") not in csv_files:
-                    print("[ERROR] links.csv wasn't found.")
+                if self.config["movies"] not in csv_files:
+                    print("[ERROR] movies.csv wasn't found.")
                     exit(1)
 
-                movies_df = pd.read_csv("resource/movies.csv", sep=',', skiprows=0)
+                movies_df = pd.read_csv(self.config["movies"], sep=',', skiprows=0)
                 for relation in movies_df.itertuples(index=False, name=None):
                     movieid, title, genres = relation
                     # --- Get entry info --- #
@@ -94,11 +98,11 @@ class Database:
 
                 del movies_df
 
-                if Path("resource/ratings.csv") not in csv_files:
+                if self.config["ratings"] not in csv_files:
                     print("[ERROR] ratings.csv wasn't found.")
                     exit(1)
 
-                ratings_df = pd.read_csv("resource/ratings.csv", sep=',', skiprows=0)
+                ratings_df = pd.read_csv(self.config["ratings"], sep=',', skiprows=0)
                 for relation in ratings_df.itertuples(index=False, name=None):
                     _, movieid, rating, _ = relation
                     # --- Get entry info --- #
@@ -115,24 +119,10 @@ class Database:
                 exit(1)
 
             try:
-                with psycopg.connect(dbname=self.name, 
-                                     user=self.user, 
-                                     host=self.host,
-                                     port=self.port) as conn:
-
+                with self.get_connection() as conn:
                     with conn.cursor() as cur:
-                        query = """INSERT INTO movies(id, imdbid, title, genres,
-                                                     ratings, users_rated)
-                                                     VALUES(%s, %s, %s,
-                                                     %s, %s, %s)"""
-                        print("[INFO] Here are 10 elements of your dataset.")
-                        for k, v in movies_data.items():
-                            if k > 10:
-                                break
-                            print(f"key: {k} value: {v}")
-
                         for relation in movies_data.values():
-                            cur.execute(query, relation)
+                            cur.execute(self.insert_into_query, relation)
             except IOError as e:
                 print(e)
                 exit(1)
@@ -142,14 +132,9 @@ class Database:
 
     def exists(self, tablename: str) -> bool:
         try:
-            with psycopg.connect(dbname=self.name, 
-                                 user=self.user, 
-                                 host=self.host,
-                                 port=self.port) as conn:
-
+            with self.get_connection() as conn:
                 with conn.cursor() as cur:
-                    query = "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
-                    cur.execute(query, (tablename,))
+                    cur.execute(self.table_exists_query, (tablename,))
                     return cur.fetchone()[0] 
         except IoError as e: 
             print(f"[ERROR] exists(): Failed to execute the query.\n{e}")
@@ -168,27 +153,31 @@ class Database:
             return
 
         try:
-
-            with psycopg.connect(dbname=self.name, 
-                                 user=self.user, 
-                                 host=self.host,
-                                 port=self.port) as conn:
-
+            with self.get_connection() as conn:
                 with conn.cursor() as cur:
                     # --- Sample query, not final --- #
                     cur.execute(query, args)
+            
                     
         except IoError as e: 
             print(f"[ERROR] make_query(): Failed to execute the query.\n{e}")
 
-
-    def fill_database(self, batch: List): 
+    def get_connection(self):
         try:
-            with psycopg.connect(dbname=self.name, 
+            conn = psycopg.connect(dbname=self.name, 
                                  user=self.user, 
                                  host=self.host,
-                                 port=self.port) as conn:
+                                 port=self.port)
+            return conn
+        except IOError as e:
+            print(e)
+            exit(1)
 
+
+    def update_db(self, *batch: List): 
+        assert 1 == 1, "TODO: fill_database() not implemented"
+        try:
+            with self.get_connection() as conn:
                 with conn.cursor() as cur:
                     query = "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
                     cur.execute(query, (tablename,))
@@ -202,3 +191,20 @@ class Database:
         assert 1 != 1, "TODO: Not initialized"
         return
 
+    def __repr__(self):
+        rows = {
+            "name": self.name,
+            "user": self.user,
+            "host": self.host,
+            "port": str(self.port)  
+        }
+
+        max_length = max(len(f"{key}: {value}") for key, value in rows.items())
+
+        title = f" {self.cls_name} "
+        half_padding = (max_length - len(title)) // 2
+        header = f"{'=' * half_padding}{title}{'=' * half_padding}"
+        header = header.ljust(max_length, "=")
+
+        formatted_rows = [f"{key}: {str(value).rjust(max_length - len(key) - 2)}" for key, value in rows.items()]
+        return f"{header}\n" + "\n".join(formatted_rows) + f"\n{'=' * len(header)}"

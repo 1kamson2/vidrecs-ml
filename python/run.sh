@@ -2,6 +2,7 @@
 
 readonly DATABASE_NAME="$1"
 readonly USERNAME="$2"
+readonly MODE="$3"
 
 check_everything() {
   if [ -z "$DATABASE_NAME" ]; then
@@ -29,8 +30,8 @@ check_everything() {
 
 create_db() {
   echo "[INFO] You have provided the following:"
-  printf " --> DB Name: %s\n --> Username: %s\n" "$DATABASE_NAME" "$USERNAME"
-  read -rp "Continue? [y/n]  "
+  printf "       Database name: %s\n       Username: %s\n" "$DATABASE_NAME" "$USERNAME"
+  read -rp "       Continue? [y/n]  "
 
   if [[ ${REPLY,,} =~ ^y(es)?$ ]]; then
     echo "[INFO] Logging."
@@ -45,15 +46,14 @@ create_db() {
 }
 
 main() {
-  echo "[INFO] Starting up."
-  db_exists=false
+  echo "[INFO] For more information about possible arguments, run the following."
+  echo "       python3 main.py --help"
   read -rp "[INFO] Should load the database? [y/n]  "
   if [[ ${REPLY,,} =~ ^y(es)?$ ]]; then
-    db_exists=true
     check_everything
   fi
 
-  echo "[INFO] Running."
-  python3 "src/main.py" "$DATABASE_NAME" "$USERNAME"
+  echo "[INFO] The program is running."
+  python3 "src/main.py" "$DATABASE_NAME" "$USERNAME" "$MODE"
 }
 main
