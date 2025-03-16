@@ -1,7 +1,9 @@
-from typing import List
+from typing import Dict, Any, List, Tuple
 import psycopg
 import pandas as pd
+import numpy as np
 from psycopg.errors import IoError
+from psycopg.rows import TupleRow
 
 class Database:
     cls_name = "Database"
@@ -16,8 +18,8 @@ class Database:
     insert_into_query = """INSERT INTO movies(id, imdbid, title, genres,
      ratings, users_rated) VALUES(%s, %s, %s, %s, %s, %s)"""
     table_exists_query = "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
-
-    def __init__(self, **config):
+    table_select_query = "SELECT * FROM %s WHERE id=%s"
+    def __init__(self, **db_config):
         """
             TODO: Titles appear to be very long.
             TODO: Make better errors.
@@ -26,11 +28,12 @@ class Database:
             be query, the rest is batch or some other data, that should be
             passed to execute. Keep in mind to check if injection occurrs.
         """
-        self.config = config
-        self.name: str = config["name"] 
-        self.user: str = config["user"] 
-        self.host: str = config["host"] 
-        self.port: int = config["port"]  
+        self._db_config: Dict[str, Any] = db_config
+        self.name: str = db_config["name"] 
+        self.user: str = db_config["user"] 
+        self.host: str = db_config["host"] 
+        self.port: int = db_config["port"]  
+        self.bounds = np.array([1, -(1 << 31)], dtype=np.int32) 
 
     def table_init(self)->None: 
         """
@@ -52,12 +55,12 @@ class Database:
             changed.
             We can calculate rating easily.
         """
-        if not self.exists(self.config["tablename"]):
-            print("[INFO] table_init(): Table doesn't exist, making one.")
+         
+        if not self.check_if_exists():
             try:
                 # --- TODO: probably should make construct_query to handle some bad
                 # injections etc --- # 
-                self.make_query(query=self.table_init_query.format(tablename=self.config["tablename"]))
+                self.set_tablename()
             except IOError as e:
                 print(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
                 exit(1) 
@@ -65,14 +68,14 @@ class Database:
             try:
                 # --- Load movies into the database --- #
                 print("[INFO] table_init(): Loading all movies.")
-                csv_files = list(self.config["resource"].glob("*.csv")) 
+                csv_files = list(self._db_config["resource"].glob("*.csv")) 
                 movies_data = dict() 
 
-                if self.config["links"] not in csv_files:
+                if self._db_config["links"] not in csv_files:
                     print("[ERROR] links.csv wasn't found.")
                     exit(1)
 
-                link_df = pd.read_csv(self.config["links"], sep=',', skiprows=0)
+                link_df = pd.read_csv(self._db_config["links"], sep=',', skiprows=0)
                 for relation in link_df.itertuples(index=False, name=None):
                     movieid, imdbid, *_ = relation
                     entry = [0 for _ in range(6)]
@@ -82,11 +85,11 @@ class Database:
                 # --- Drop the reference --- #
                 del link_df
 
-                if self.config["movies"] not in csv_files:
+                if self._db_config["movies"] not in csv_files:
                     print("[ERROR] movies.csv wasn't found.")
                     exit(1)
 
-                movies_df = pd.read_csv(self.config["movies"], sep=',', skiprows=0)
+                movies_df = pd.read_csv(self._db_config["movies"], sep=',', skiprows=0)
                 for relation in movies_df.itertuples(index=False, name=None):
                     movieid, title, genres = relation
                     # --- Get entry info --- #
@@ -98,19 +101,21 @@ class Database:
 
                 del movies_df
 
-                if self.config["ratings"] not in csv_files:
+                if self._db_config["ratings"] not in csv_files:
                     print("[ERROR] ratings.csv wasn't found.")
                     exit(1)
 
-                ratings_df = pd.read_csv(self.config["ratings"], sep=',', skiprows=0)
+                ratings_df = pd.read_csv(self._db_config["ratings"], sep=',', skiprows=0)
                 for relation in ratings_df.itertuples(index=False, name=None):
                     _, movieid, rating, _ = relation
                     # --- Get entry info --- #
                     entry = movies_data[movieid]
                     entry[4] += rating 
                     entry[5] += 1 
+                    self.bounds[1] = max(self.bounds[1], movieid)
                     # --- Replace with new entry --- #
                     movies_data[movieid] = entry
+
                 del ratings_df
                 # TODO: For now skipping the tags.csv
                 
@@ -130,37 +135,106 @@ class Database:
 
         return
 
-    def exists(self, tablename: str) -> bool:
-        try:
-            with self.get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(self.table_exists_query, (tablename,))
-                    return cur.fetchone()[0] 
-        except IoError as e: 
-            print(f"[ERROR] exists(): Failed to execute the query.\n{e}")
-            exit(1)
-
-
-    def make_query(self, query: str ="", *args)-> None:
+    def make_query(self, info: str, query: str, **kwargs)->(TupleRow | List[TupleRow]):
         """
             Parameters:
-                query: what should this function execute
-                args: arguments for query
+                info: Specifies what this function does, it is used only 
+                for logging to know what query is executed. 
+                query: Specifies what the program will execute.
+                **kwargs: Dictionary type like parameter, that should contain
+                all variables that will be executed in the query. The following
+                arguments are allowed (all should be in a tuple):
+                'exists': str: Check if table name exists. 
+                'tablename': str: Create a table.
+                'batch_size': int: Get the elements with size of the batch size. 
+                Those elements will be selected randomly. 
+                'id': int: Get the element with given id. 
+            This function connects to specified database, then executes queries
+            defined in the function.
         """
+        ALLOWED_QUERIES: set = {"exists", "tablename", "batch_size", "id"} 
+        key, *extra = kwargs.keys()
+        if key not in ALLOWED_QUERIES or len(extra) > 1:
+            print(f"[ERROR] make_query(): '{kwargs}' is not handled by this function.") 
+            exit(1)
+        del extra
+
+        if len(info) == 0:
+            print("[WARNING] make_query(): No info provided.") 
+        else:
+            print(f"[INFO] make_query(): {info}")
 
         if len(query) == 0:
-            print("[WARNING] Query is length of 0, query omitted.")
-            return
+            print("[ERROR] make_query(): No query provided.")
+            exit(1)
 
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cur:
-                    # --- Sample query, not final --- #
-                    cur.execute(query, args)
-            
+                    # TODO: For now it might work, but what if I would like to
+                    # update the database? 
+                    if key=="tablename":
+                        tablename, *_ = kwargs[key]
+                        query = query.format(tablename=tablename) 
+                        cur.execute(query)
+                        return (None,) 
+                    elif key=="exists":
+                        cur.execute(query, kwargs[key])
+                        return cur.fetchone() 
+                    elif key=="batch_size":
+                        ret = []
+                        generator = np.random.default_rng()
+                        lo, hi = self.bounds
+                        for _ in range(kwargs[key]):
+                            id = generator.integers(low=lo, high=hi, size=1) 
+                            cur.execute(query,(self._db_config["tablename"], id)) 
+                            ret.append(cur.fetchone)
+                        return tuple(ret)
+                    elif key=="id":
+                        cur.execute(query,(self._db_config["tablename"], key)) 
+                        return (cur.fetchone(),) 
+                    else:
+                        cur.execute(query, kwargs[key])
+                        return (cur.fetchone(),) 
                     
         except IoError as e: 
             print(f"[ERROR] make_query(): Failed to execute the query.\n{e}")
+
+    def check_if_exists(self)->TupleRow:
+        """
+            Function:
+            Wrapper around query for checking if given table name exists.
+        """
+        return self.make_query("", 
+                self.table_exists_query, 
+                exists=(self._db_config["tablename"],))[0]
+        
+
+    def set_tablename(self)->None:
+        """
+            Function:
+            Wrapper around query for setting a tablename.
+        """
+        self.make_query("Table doesn't exist, making one.",
+                                query=self.table_init_query,
+                                tablename=(self._db_config["tablename"],))
+
+
+    def get_batch(self, batch_size)->(TupleRow | List[TupleRow]):
+        """
+            Function:
+            Wrapper around query for getting a batch of {batch_size}.
+        """
+        return self.make_query(f"Getting random elements. [{batch_size}]", self.table_select_query,
+                        batch_size=batch_size) 
+        
+    def get_by_id(self, id: int)->(TupleRow | List[TupleRow]):
+        """
+            Function:
+            Wrapper around query for getting a random element.
+        """
+        return self.make_query(f"Getting a random element.", self.table_select_query,
+                        id=id) 
 
     def get_connection(self):
         try:
@@ -172,24 +246,6 @@ class Database:
         except IOError as e:
             print(e)
             exit(1)
-
-
-    def update_db(self, *batch: List): 
-        assert 1 == 1, "TODO: fill_database() not implemented"
-        try:
-            with self.get_connection() as conn:
-                with conn.cursor() as cur:
-                    query = "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
-                    cur.execute(query, (tablename,))
-                    return cur.fetchone()[0] 
-        except IoError as e: 
-            print(f"[ERROR] exists(): Failed to execute the query.\n{e}")
-            exit(1)
-
-
-    def transaction(self):
-        assert 1 != 1, "TODO: Not initialized"
-        return
 
     def __repr__(self):
         rows = {

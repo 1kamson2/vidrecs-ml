@@ -1,6 +1,7 @@
 from enum import Enum 
 from db.Database import Database
-TOLERANCE = 1e-5
+import math
+TOLERANCE = 1e-3
 
 class Actions(Enum):
     UPVOTE = 0,
@@ -9,23 +10,26 @@ class Actions(Enum):
 
 class Environment:
     cls_name = "Environment"
-    def __init__(self, db: Database, **config):
-        self.config = config
-        action_up, action_down = config["actions"]
+    def __init__(self, **full_config):
+        env_config = full_config["env"]
+        self._full_config = full_config
+        action_up, action_down = env_config["actions"]
         self.actions = {
             action_up : Actions.UPVOTE, 
             action_down : Actions.DOWNVOTE
         }
 
-        reward_up, reward_down = config["rewards"]
+        reward_up, reward_down = env_config["rewards"]
         self.rewards = {
             Actions.UPVOTE : reward_up,
             Actions.DOWNVOTE : reward_down
         }
 
-        self.render_mode = config["render_mode"]
-        self.upvote_prob = config["likeness"]
-        self.db = db
+        self.render_mode = env_config["render_mode"]
+        self.upvote_prob = env_config["likeness"]
+
+        self._db = Database(**full_config["db"], **full_config["paths"])
+        self._db.table_init()
         self.validate_members()
 
     def validate_members(self)->None:
@@ -33,11 +37,26 @@ class Environment:
         for prob in self.upvote_prob.values():
             cum_prob += prob
 
-        if not (cum_prob - TOLERANCE <= cum_prob <= cum_prob + TOLERANCE):
+        if not (1 - TOLERANCE <= cum_prob <= 1 + TOLERANCE):
             print("[ERROR] validate_members(): Cumulative probability doesn't " 
-                "equal to 1. ", end="")
-            print(f"Equals to {cum_prob}")
+                "equal to 1. ")
+            print(f"        {1 - TOLERANCE} <= {cum_prob} <= {1 + TOLERANCE} ")
             exit(1)
+
+    def step(self, action: Actions)->None:
+        """
+        TODO:
+        For now this will return randomly observations etc, but realistically it
+        should be based on our choices.
+        """
+        obs = "something"
+        reward = "something" 
+        terminated = "something"
+
+
+
+
+        assert False, "TODO: Environment's action executor, not implemented."
 
     def __repr__(self):
         # This dict is too long to display. Shorten it.

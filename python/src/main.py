@@ -19,8 +19,8 @@ def args_validation(args: argparse.Namespace)->Dict[str, Any]:
         This function validates what user passed, also does some config's
         variables normalization, that wasn't possible on JSON's level.
     """
-    with open(__CONFIG_FILE_PATH, 'r') as cfg_file:
-        config = json.load(cfg_file) 
+    with open(__CONFIG_FILE_PATH, 'r') as config_file:
+        config = json.load(config_file) 
 
     """
         TODO: 
@@ -78,9 +78,6 @@ def main()->None:
         "run.", type=str)
     args = parser.parse_args()
     full_config = args_validation(args)
-    db = Database(**full_config["db"], **full_config["paths"])
-    env = Environment(**full_config["env"])
-    db.table_init() 
     model = VRModel(**full_config)
 
 
