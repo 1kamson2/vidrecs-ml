@@ -1,13 +1,9 @@
-from enum import Enum
+from utils.enums import Actions
+from psycopg.rows import TupleRow
+from typing import Tuple, List
 from db.Database import Database
-from typing import Tuple
 
 TOLERANCE = 1e-3
-
-
-class Actions(Enum):
-    UPVOTE = 0
-    DOWNVOTE = 1
 
 
 class Environment:
@@ -18,15 +14,21 @@ class Environment:
         self._full_config = full_config
         action_up, action_down = env_config["actions"]
         self.actions = {action_up: Actions.UPVOTE, action_down: Actions.DOWNVOTE}
-
+        self._db = Database(
+            **full_config["db"], **full_config["paths"], **full_config["model"]
+        )
+        self._db.table_init()
         reward_up, reward_down = env_config["rewards"]
         self.rewards = {Actions.UPVOTE: reward_up, Actions.DOWNVOTE: reward_down}
 
         self.render_mode = env_config["render_mode"]
         self.upvote_prob = env_config["likeness"]
 
-        self._db = Database(**full_config["db"], **full_config["paths"])
-        self._db.table_init()
+        self.last_genres: List[str]
+        self.current_episode: int = 0
+        model_config = full_config["model"]
+        self.nepisodes: int = model_config["nepisodes"]
+        self.nactions: int = model_config["action_space_size"]
         self.validate_members()
 
     def validate_members(self) -> None:
@@ -43,11 +45,12 @@ class Environment:
             exit(1)
 
     def reset(self) -> Tuple:
-        obs = self._db.get_random_entry()
+        obs, *_ = self._db.get_random_entry()
         info = f"[INFO] First entry is: {obs}"
+        self.last_genres = obs[3]
         return (obs, info)
 
-    def step(self, action: Actions) -> None:
+    def step(self, action: Actions) -> TupleRow | Tuple[TupleRow]:
         """
         TODO:
         For now this will return randomly observations etc, but realistically it
@@ -73,11 +76,29 @@ class Environment:
         Terminated if we hit some bound of recommendations etc.
         """
 
-        obs = "something"
-        reward = "something"
-        terminated = "something"
+        """
+        Algorithm: Naive.
+        Probably we should use embedding (check on that), but for now, assume we
+        get movie with genres A, B, ..., Z, for the sake of the example we will
+        consider only A, B, C. They are sorted, so we will always yield the same
+        results. If user upvoted this, that means we should assume that he
+        liked, all genres. The next observation, should be the one with the
+        highest q-value and have A, B, C, or (A, B), (B, C), (A, C) or (A, B,
+        C). This operations should be fast because:
+            - For now the database is not that big.
+            - We operate on sets, which are fast operations.
+        Otherwise, we will send out the movies randomly.
+        How this will work out, will be checked in action.
+        The observations will be choosen randomly 
+        """
 
-        assert False, "TODO: Environment's action executor, not implemented."
+        reward = self.rewards[action]
+        print(self.last_genres)
+        obs, *_ = self._db.get_batch(self.last_genres, action)
+        terminated = True if self.current_episode > self.nepisodes else False
+        self.current_episode += 1
+        self.last_genres = obs[3]
+        return obs, reward, terminated
 
     def __repr__(self) -> str:
         # This dict is too long to display. Shorten it.

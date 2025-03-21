@@ -1,8 +1,8 @@
+from model.model import VRModel
 import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict
-from model.model import VRModel
 
 # [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
 # FILE
@@ -79,6 +79,7 @@ def main() -> None:
     args = parser.parse_args()
     full_config = args_validation(args)
     model = VRModel(**full_config)
+    model.run()
 
 
 if __name__ == "__main__":

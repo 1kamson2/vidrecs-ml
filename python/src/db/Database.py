@@ -1,7 +1,9 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import psycopg
 import pandas as pd
 import numpy as np
+import math
+from utils.enums import Actions
 from psycopg.errors import IoError
 from psycopg.rows import TupleRow
 
@@ -21,13 +23,16 @@ class Database:
     table_exists_query = (
         "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
     )
-    table_select_query = "SELECT * FROM %s WHERE id=%s"
+    table_select_query = "SELECT * FROM {tablename} WHERE id=%s"
+    upvote_query = "SELECT * FROM {tablename} WHERE genres && %s"
+    downvote_query = "SELECT * FROM {tablename} WHERE NOT genres && &s"
 
     def __init__(self, **db_config):
         """
         TODO: Titles appear to be very long.
         TODO: Make better errors.
         TODO: get rid of unnecessary parameters and functions, e.g.:
+        TODO: check if indices skip more than 2
         update_db etc. For example you could do *args, the first one would
         be query, the rest is batch or some other data, that should be
         passed to execute. Keep in mind to check if injection occurrs.
@@ -80,12 +85,18 @@ class Database:
                     exit(1)
 
                 link_df = pd.read_csv(self._db_config["links"], sep=",", skiprows=0)
-                for relation in link_df.itertuples(index=False, name=None):
-                    movieid, imdbid, *_ = relation
+                for idx, relation in enumerate(
+                    link_df.itertuples(index=False, name=None)
+                ):
+                    """
+                        IDs provided in the csv seems to be incorrect.
+                    """
+                    _, imdbid, *_ = relation
                     entry = [0 for _ in range(6)]
-                    entry[0] = movieid
+                    entry[0] = idx
                     entry[1] = imdbid
-                    movies_data[movieid] = entry
+                    movies_data[idx] = entry
+                    self.bounds[1] = max(self.bounds[1], idx)
                 # --- Drop the reference --- #
                 del link_df
 
@@ -94,35 +105,61 @@ class Database:
                     exit(1)
 
                 movies_df = pd.read_csv(self._db_config["movies"], sep=",", skiprows=0)
-                for relation in movies_df.itertuples(index=False, name=None):
-                    movieid, title, genres = relation
+                for idx, relation in enumerate(
+                    movies_df.itertuples(index=False, name=None)
+                ):
+                    """
+                    From now on, thanks to the previous loop, the IDs are
+                    correct.
+                    """
+                    _, title, genres = relation
                     # --- Get entry info --- #
-                    entry = movies_data[movieid]
+                    entry = movies_data[idx]
                     entry[2] = title.rstrip()
-                    entry[3] = genres.split("|")
+                    entry[3] = sorted(genres.split("|"))
                     # --- Replace with new entry --- #
-                    movies_data[movieid] = entry
+                    movies_data[idx] = entry
 
                 del movies_df
+                """
+                For now there is no real reason to use this, because csv, with
+                ratings is pretty bugged. we will render random ratings.
+                """
+                print(self.bounds[1])
+                for idx in range(self.bounds[1]):
+                    nratings = np.random.randint(0, 100, size=1)
+                    ratings_sum = sum(
+                        float(math.ceil(6 * np.random.random()))
+                        for _ in range(*nratings)
+                    )
+                    entry = movies_data[idx]
+                    entry[4] = ratings_sum
+                    entry[5] = int(nratings[0])
+                    movies_data[idx] = tuple(entry)
 
-                if self._db_config["ratings"] not in csv_files:
-                    print("[ERROR] ratings.csv wasn't found.")
-                    exit(1)
+                #
+                # if self._db_config["ratings"] not in csv_files:
+                #     print("[ERROR] ratings.csv wasn't found.")
+                #     exit(1)
+                #
+                #
+                #
+                # ratings_df = pd.read_csv(
+                #     self._db_config["ratings"], sep=",", skiprows=0
+                # )
+                # print(ratings_df)
+                # for idx, relation in enumerate(
+                #     ratings_df.itertuples(index=False, name=None)
+                # ):
+                #     *_, rating, _ = relation
+                #     # --- Get entry info --- #
+                #     entry = movies_data[idx]
+                #     entry[4] += rating
+                #     entry[5] += 1
+                #     # --- Replace with new entry --- #
+                #     movies_data[idx] = entry
 
-                ratings_df = pd.read_csv(
-                    self._db_config["ratings"], sep=",", skiprows=0
-                )
-                for relation in ratings_df.itertuples(index=False, name=None):
-                    _, movieid, rating, _ = relation
-                    # --- Get entry info --- #
-                    entry = movies_data[movieid]
-                    entry[4] += rating
-                    entry[5] += 1
-                    self.bounds[1] = max(self.bounds[1], movieid)
-                    # --- Replace with new entry --- #
-                    movies_data[movieid] = entry
-
-                del ratings_df
+                # del ratings_df
                 # TODO: For now skipping the tags.csv
 
             except IOError as e:
@@ -137,6 +174,8 @@ class Database:
             except IOError as e:
                 print(e)
                 exit(1)
+
+        print("[INFO] table_init(): Movies loaded successfully.")
 
         return
 
@@ -159,10 +198,9 @@ class Database:
         """
         ALLOWED_QUERIES: set = {"exists", "tablename", "batch_size", "id"}
         key, *extra = kwargs.keys()
-        if key not in ALLOWED_QUERIES or len(extra) > 1:
+        if key not in ALLOWED_QUERIES:
             print(f"[ERROR] make_query(): '{kwargs}' is not handled by this function.")
             exit(1)
-        del extra
 
         if len(info) == 0:
             print("[WARNING] make_query(): No info provided.")
@@ -187,16 +225,14 @@ class Database:
                         cur.execute(query, kwargs[key])
                         return cur.fetchone()
                     elif key == "batch_size":
-                        ret = []
-                        generator = np.random.default_rng()
-                        lo, hi = self.bounds
-                        for _ in range(kwargs[key]):
-                            id = generator.integers(low=lo, high=hi, size=1)
-                            cur.execute(query, (self._db_config["tablename"], id))
-                            ret.append(cur.fetchone)
-                        return tuple(ret)
+                        genres, *_ = extra
+                        cur.execute(query, kwargs[genres])
+                        cands: List[TupleRow] = cur.fetchall()
+                        np.random.shuffle(cands)
+                        sz = min(kwargs[key], len(cands) - 1)
+                        return tuple(cands[:sz])
                     elif key == "id":
-                        cur.execute(query, (self._db_config["tablename"], key))
+                        cur.execute(query, (kwargs["id"],))
                         return (cur.fetchone(),)
                     else:
                         cur.execute(query, kwargs[key])
@@ -225,15 +261,28 @@ class Database:
             tablename=(self._db_config["tablename"],),
         )
 
-    def get_batch(self, batch_size) -> TupleRow | List[TupleRow]:
+    def get_batch(
+        self, genres: Tuple[str], action: Actions
+    ) -> TupleRow | List[TupleRow]:
         """
         Function:
         Wrapper around query for getting a batch of {batch_size}.
         """
+        query = (
+            self.upvote_query
+            if action == Actions.UPVOTE
+            else self.downvote_query
+            if action == Actions.DOWNVOTE
+            else None
+        )
+        assert query is not None
+        query = query.format(tablename=self._db_config["tablename"])
+
         return self.make_query(
-            f"Getting random elements. [{batch_size}]",
-            self.table_select_query,
-            batch_size=batch_size,
+            f"Getting random elements. [{self._db_config['batch_size']}]",
+            query,
+            batch_size=self._db_config["batch_size"],
+            genres=genres,
         )
 
     def get_by_id(self, id: int) -> TupleRow | List[TupleRow]:
@@ -246,11 +295,13 @@ class Database:
         )
 
     def get_random_entry(self) -> TupleRow | List[TupleRow]:
-        generator = np.random.default_rng()
         lo, hi = self.bounds
-        id = generator.integers(low=lo, high=hi, size=1)
+        id = int(*np.random.randint(low=lo, high=hi, size=1))
+        query = self.table_select_query.format(tablename=self._db_config["tablename"])
         return self.make_query(
-            "Getting a random element.", self.table_select_query, id=id
+            "Getting a random element.",
+            query,
+            id=id,
         )
 
     def get_connection(self):
