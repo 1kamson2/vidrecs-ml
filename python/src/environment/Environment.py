@@ -1,5 +1,4 @@
 from utils.enums import Actions
-from psycopg.rows import TupleRow
 from typing import Tuple, List
 from db.Database import Database
 
@@ -50,7 +49,7 @@ class Environment:
         self.last_genres = obs[3]
         return (obs, info)
 
-    def step(self, action: Actions) -> TupleRow | Tuple[TupleRow]:
+    def step(self, action: Actions) -> Tuple:
         """
         TODO:
         For now this will return randomly observations etc, but realistically it
@@ -93,7 +92,10 @@ class Environment:
         """
 
         reward = self.rewards[action]
-        print(self.last_genres)
+        # TODO: FIX THIS, BECAUSE WE GET ONLY THE FIRST OBSERVATION, BUT WE
+        # WANNA GET THE ENTIRE BATCH, obs, *_ <--- here is the rest
+        # TODO: PROB THE BATCH SHOULD BE PASSED ELSEWHERE, AND PASSED TO THIS
+        # FUNCTION
         obs, *_ = self._db.get_batch(self.last_genres, action)
         terminated = True if self.current_episode > self.nepisodes else False
         self.current_episode += 1

@@ -3,6 +3,7 @@ import psycopg
 import pandas as pd
 import numpy as np
 import math
+from psycopg.abc import Query
 from utils.enums import Actions
 from psycopg.errors import IoError
 from psycopg.rows import TupleRow
@@ -25,7 +26,7 @@ class Database:
     )
     table_select_query = "SELECT * FROM {tablename} WHERE id=%s"
     upvote_query = "SELECT * FROM {tablename} WHERE genres && %s"
-    downvote_query = "SELECT * FROM {tablename} WHERE NOT genres && &s"
+    downvote_query = "SELECT * FROM {tablename} WHERE NOT genres && %s"
 
     def __init__(self, **db_config):
         """
@@ -179,7 +180,9 @@ class Database:
 
         return
 
-    def make_query(self, info: str, query: str, **kwargs) -> TupleRow | List[TupleRow]:
+    def make_query(
+        self, info: str, query: Query, **kwargs
+    ) -> TupleRow | List[TupleRow]:
         """
         Parameters:
             info: Specifies what this function does, it is used only
@@ -223,10 +226,12 @@ class Database:
                         return (None,)
                     elif key == "exists":
                         cur.execute(query, kwargs[key])
-                        return cur.fetchone()
+                        fetched = cur.fetchone()
+                        # TODO: Check if this fucks up the function
+                        return (False,) if fetched is None else fetched
                     elif key == "batch_size":
                         genres, *_ = extra
-                        cur.execute(query, kwargs[genres])
+                        cur.execute(query, (kwargs[genres],))
                         cands: List[TupleRow] = cur.fetchall()
                         np.random.shuffle(cands)
                         sz = min(kwargs[key], len(cands) - 1)
@@ -262,7 +267,7 @@ class Database:
         )
 
     def get_batch(
-        self, genres: Tuple[str], action: Actions
+        self, genres: Tuple | List, action: Actions
     ) -> TupleRow | List[TupleRow]:
         """
         Function:

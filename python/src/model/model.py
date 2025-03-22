@@ -1,7 +1,9 @@
 from collections import defaultdict
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 import numpy as np
 from environment.Environment import Environment
+from tqdm import tqdm
+
 from utils.enums import Actions
 
 
@@ -35,19 +37,65 @@ class VRModel:
         self.q_values: dict = defaultdict(
             lambda: np.zeros(model_config["action_space_size"])
         )
-        self.training_err = np.array([], dtype=np.float32)
+        self.training_err = []
         # observation is the next video or something.
 
+    # TODO: SHOULD BE NAMEDTUPLE BECAUSE IT IS HARD TO READ
     def run(self) -> None:
-        _reset = self.env.reset()
-        _step = self.env.step(Actions.UPVOTE)
-        print(_step)
+        for episode in tqdm(range(self.env.nepisodes)):
+            obs, _ = self.env.reset()
+            done = False
+            while not done:
+                # TODO: make working it, for already existing db
+                # TODO: HASH GENRES BEFORE ELSEWHERE
+                # TODO: BETTER ERROR HANDLING
+                action = self.get_action(obs)
 
-    def get_action(self) -> None:
-        assert False, "TODO: Agent's policy, not implemented"
+                # ------ CHANGE THIS LATER
+                obs = tuple(tuple(el) if isinstance(el, list) else el for el in obs)
+                # ------ CHANGE THIS LATER
 
-    def update_model(self) -> None:
-        assert False, "TODO: Agent update model function, not implemented"
+                next_obs, reward, terminated = self.env.step(action)
+
+                # ------ CHANGE THIS LATER
+                next_obs = tuple(
+                    tuple(el) if isinstance(el, list) else el for el in next_obs
+                )
+                # ------ CHANGE THIS LATER
+
+                self.update_model(obs, next_obs, action, reward, terminated)
+                done = terminated
+                obs = next_obs
+                self.update_eps()
+                # attrs = vars(self)
+                # print(", ".join(f"{key} : {value}" for key, value in attrs.items()))
+
+    def get_action(self, obs: Tuple[Any]) -> Actions:
+        if np.random.random() < self.eps:
+            return Actions.UPVOTE if np.random.random() < 0.5 else Actions.DOWNVOTE
+        else:
+            # TODO: Here consider probabilities
+            return (
+                Actions.UPVOTE
+                if int(np.argmax(self.q_values[obs])) == 0
+                else Actions.DOWNVOTE
+            )
+
+    def update_model(
+        self,
+        obs: Tuple,
+        next_obs: Tuple,
+        action: Actions,
+        reward: float,
+        terminated: bool,
+    ) -> None:
+        action_value = action.value
+        fut_q_val = (not terminated) * np.max(self.q_values[next_obs])
+        temp_diff = reward + self.gamma * fut_q_val * self.q_values[obs][action_value]
+        self.q_values[obs][action_value] = (
+            self.q_values[obs][action_value] + self.lr * temp_diff
+        )
+        self.training_err.append(temp_diff)
 
     def update_eps(self) -> None:
-        assert False, "TODO: Agent update eps function, not implemented"
+        self.eps = max(self.eps_final, self.eps - self.eps_decay)
