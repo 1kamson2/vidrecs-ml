@@ -18,8 +18,6 @@ check_everything() {
     exit 42
   fi
 
-  # TODO:
-  # This seems to try to connect to database, could be security risk? --- #
   if ! psql "$DATABASE_NAME" -c '\q' >/dev/null 2>&1; then
     printf "[WARNING] '%s' doesn't exist.\n" "$DATABASE_NAME"
     echo "[WARNING] Creating a database."

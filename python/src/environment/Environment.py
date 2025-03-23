@@ -1,5 +1,6 @@
+from psycopg.rows import TupleRow
 from utils.enums import Actions
-from typing import Tuple, List
+from typing import List, Tuple
 from db.Database import Database
 
 TOLERANCE = 1e-3
@@ -23,11 +24,13 @@ class Environment:
         self.render_mode = env_config["render_mode"]
         self.upvote_prob = env_config["likeness"]
 
-        self.last_genres: List[str]
+        self.last_genres: Tuple[str]
         self.current_episode: int = 0
         model_config = full_config["model"]
         self.nepisodes: int = model_config["nepisodes"]
         self.nactions: int = model_config["action_space_size"]
+        self.batch: TupleRow | List[TupleRow]
+        self.record_tracker = 1 << 31
         self.validate_members()
 
     def validate_members(self) -> None:
@@ -44,9 +47,15 @@ class Environment:
             exit(1)
 
     def reset(self) -> Tuple:
-        obs, *_ = self._db.get_random_entry()
+        obs = self._db.get_random_entry()
+        if isinstance(obs[3], Tuple) and obs[0] is not None:
+            self.last_genres = obs[3]
+        else:
+            print(
+                f"[ERROR] reset(): Record contain wrong types.\n        {type(obs[3])}"
+            )
+            exit(1)
         info = f"[INFO] First entry is: {obs}"
-        self.last_genres = obs[3]
         return (obs, info)
 
     def step(self, action: Actions) -> Tuple:
@@ -90,23 +99,27 @@ class Environment:
         How this will work out, will be checked in action.
         The observations will be choosen randomly 
         """
+        if self.record_tracker > self._full_config["model"]["batch_size"] - 1:
+            self.batch = self._db.get_batch(self.last_genres, action)
+            self.record_tracker: int = 0
 
         reward = self.rewards[action]
-        # TODO: FIX THIS, BECAUSE WE GET ONLY THE FIRST OBSERVATION, BUT WE
-        # WANNA GET THE ENTIRE BATCH, obs, *_ <--- here is the rest
-        # TODO: PROB THE BATCH SHOULD BE PASSED ELSEWHERE, AND PASSED TO THIS
-        # FUNCTION
-        obs, *_ = self._db.get_batch(self.last_genres, action)
+        obs = self.batch[self.record_tracker]
         terminated = True if self.current_episode > self.nepisodes else False
         self.current_episode += 1
         self.last_genres = obs[3]
+        self.record_tracker += 1
+
+        if terminated:
+            self.record_tracker = 1 << 31
+            self.current_episode = 0
+
         return obs, reward, terminated
 
     def __repr__(self) -> str:
-        # This dict is too long to display. Shorten it.
+        # This dict is too long to display, so it is shortened.
         upvote_prob_keys = list(self.upvote_prob.keys())
         upvote_prob_str = f"{upvote_prob_keys[0]}: {self.upvote_prob[upvote_prob_keys[0]]}, ..., {upvote_prob_keys[-1]}: {self.upvote_prob[upvote_prob_keys[-1]]}"
-
         rows = {
             "actions": self.actions,
             "rewards": self.rewards,

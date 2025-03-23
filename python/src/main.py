@@ -1,8 +1,8 @@
-from model.model import VRModel
 import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict
+from model.model import VRModel
 
 # [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
 # FILE
@@ -20,13 +20,6 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
     """
     with open(__CONFIG_FILE_PATH, "r") as config_file:
         config = json.load(config_file)
-
-    """
-        TODO: 
-        --> For now those are simple checks, but we may require some more
-        complicated ones.
-        --> Better errors (for now placeholders)
-    """
 
     # Check if the variables are correct
     if len(args.name) > 0:
@@ -56,7 +49,7 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
         config["paths"]["movies"] = Path(config["paths"]["movies"])
         config["paths"]["ratings"] = Path(config["paths"]["ratings"])
         config["paths"]["tags"] = Path(config["paths"]["tags"])
-    except IOError as e:
+    except ValueError as e:
         print(e)
         exit(1)
     return config

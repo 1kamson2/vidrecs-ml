@@ -3,46 +3,31 @@ import psycopg
 import pandas as pd
 import numpy as np
 import math
+import tomllib
+from pathlib import Path
 from psycopg.abc import Query
 from utils.enums import Actions
-from psycopg.errors import IoError
 from psycopg.rows import TupleRow
 
 
 class Database:
-    cls_name = "Database"
-    table_init_query = """CREATE TABLE {tablename} ( 
-                    id SERIAL PRIMARY KEY,
-                    imdbid SERIAL,
-                    title VARCHAR,
-                    genres TEXT[],
-                    ratings REAL,
-                    users_rated SERIAL
-                    )"""
-    insert_into_query = """INSERT INTO movies(id, imdbid, title, genres,
-     ratings, users_rated) VALUES(%s, %s, %s, %s, %s, %s)"""
-    table_exists_query = (
-        "SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name=%s)"
-    )
-    table_select_query = "SELECT * FROM {tablename} WHERE id=%s"
-    upvote_query = "SELECT * FROM {tablename} WHERE genres && %s"
-    downvote_query = "SELECT * FROM {tablename} WHERE NOT genres && %s"
+    cls_name = "MovieDB"
+    # TODO: Add logging
 
     def __init__(self, **db_config):
         """
         TODO: Titles appear to be very long.
-        TODO: Make better errors.
-        TODO: get rid of unnecessary parameters and functions, e.g.:
-        TODO: check if indices skip more than 2
-        update_db etc. For example you could do *args, the first one would
-        be query, the rest is batch or some other data, that should be
-        passed to execute. Keep in mind to check if injection occurrs.
         """
+
+        with open(Path("resource/queries.toml"), "rb") as toml:
+            queries = tomllib.load(toml)
+
         self._db_config: Dict[str, Any] = db_config
         self.name: str = db_config["name"]
         self.user: str = db_config["user"]
         self.host: str = db_config["host"]
         self.port: int = db_config["port"]
+        self.queries: Dict = queries["POSTGRES_QUERIES"]
         self.bounds = np.array([1, -(1 << 31)], dtype=np.int32)
 
     def table_init(self) -> None:
@@ -68,10 +53,8 @@ class Database:
 
         if not self.check_if_exists():
             try:
-                # --- TODO: probably should make construct_query to handle some bad
-                # injections etc --- #
                 self.set_tablename()
-            except IOError as e:
+            except ValueError | psycopg.DatabaseError as e:
                 print(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
                 exit(1)
 
@@ -126,7 +109,6 @@ class Database:
                 For now there is no real reason to use this, because csv, with
                 ratings is pretty bugged. we will render random ratings.
                 """
-                print(self.bounds[1])
                 for idx in range(self.bounds[1]):
                     nratings = np.random.randint(0, 100, size=1)
                     ratings_sum = sum(
@@ -163,7 +145,7 @@ class Database:
                 # del ratings_df
                 # TODO: For now skipping the tags.csv
 
-            except IOError as e:
+            except ValueError | IndexError as e:
                 print(e)
                 exit(1)
 
@@ -171,14 +153,46 @@ class Database:
                 with self.get_connection() as conn:
                     with conn.cursor() as cur:
                         for relation in movies_data.values():
-                            cur.execute(self.insert_into_query, relation)
+                            cur.execute(self.queries["INSERT_INTO"], relation)
             except IOError as e:
                 print(e)
                 exit(1)
+            print("[INFO] table_init(): Movies loaded successfully.")
+            return
 
-        print("[INFO] table_init(): Movies loaded successfully.")
-
-        return
+        # For more readibility, could be else
+        if self.check_if_exists():
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cur:
+                        CHECK_ROWS = self.queries["CHECK_NUMBER_OF_ROWS"].format(
+                            tablename=self._db_config["tablename"]
+                        )
+                        cur.execute(CHECK_ROWS)
+                        fetched = cur.fetchone()
+                        assert fetched is not None, (
+                            "[ERROR] table_init(): Fetched row is None"
+                        )
+                        assert fetched[0] > 0, (
+                            "[ERROR] table_init(): Your database is not initialized"
+                        )
+                        self.bounds[1] = fetched[0]
+                        CHECK_COLS = self.queries["CHECK_NUMBER_OF_COLS"].format(
+                            tablename=self._db_config["tablename"]
+                        )
+                        cur.execute(CHECK_COLS)
+                        fetched = cur.fetchone()
+                        assert fetched is not None, (
+                            "[ERROR] table_init(): Fetched column is None"
+                        )
+                        assert fetched[0] > 0, (
+                            "[ERROR] table_init(): Your database is not initialized"
+                        )
+                print("[INFO} table_init(): Your database passed light test.")
+                return
+            except psycopg.DatabaseError | psycopg.ProgrammingError | ValueError as e:
+                print(e)
+                exit(1)
 
     def make_query(
         self, info: str, query: Query, **kwargs
@@ -212,38 +226,50 @@ class Database:
 
         if len(query) == 0:
             print("[ERROR] make_query(): No query provided.")
-            exit(1)
+            return (None,)
 
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cur:
-                    # TODO: For now it might work, but what if I would like to
-                    # update the database?
-                    if key == "tablename":
-                        tablename, *_ = kwargs[key]
-                        query = query.format(tablename=tablename)
-                        cur.execute(query)
-                        return (None,)
-                    elif key == "exists":
-                        cur.execute(query, kwargs[key])
-                        fetched = cur.fetchone()
-                        # TODO: Check if this fucks up the function
-                        return (False,) if fetched is None else fetched
-                    elif key == "batch_size":
-                        genres, *_ = extra
-                        cur.execute(query, (kwargs[genres],))
-                        cands: List[TupleRow] = cur.fetchall()
-                        np.random.shuffle(cands)
-                        sz = min(kwargs[key], len(cands) - 1)
-                        return tuple(cands[:sz])
-                    elif key == "id":
-                        cur.execute(query, (kwargs["id"],))
-                        return (cur.fetchone(),)
-                    else:
-                        cur.execute(query, kwargs[key])
-                        return (cur.fetchone(),)
+                    match key:
+                        case "tablename":
+                            tablename, *_ = kwargs[key]
+                            query = query.format(tablename=tablename)
+                            cur.execute(query)
+                            return (None,)
+                        case "exists":
+                            cur.execute(query, kwargs[key])
+                            fetched = cur.fetchone()
+                            return (False,) if fetched is None else fetched
+                        case "batch_size":
+                            genres, *_ = extra
+                            cur.execute(query, (list(kwargs[genres]),))
+                            cands: List[TupleRow] = cur.fetchall()
+                            np.random.shuffle(cands)
+                            sz = min(kwargs[key], len(cands) - 1)
+                            cands = cands[:sz]
+                            fetched_final = tuple(
+                                tuple(
+                                    tuple(item) if isinstance(item, List) else item
+                                    for item in cand
+                                )
+                                for cand in cands
+                            )
+                            return fetched_final
+                        case "id":
+                            cur.execute(query, (kwargs["id"],))
+                            fetched = cur.fetchone()
+                            if fetched is None:
+                                return (None,)
+                            fetched_final = tuple(
+                                tuple(item) if isinstance(item, List) else item
+                                for item in fetched
+                            )
 
-        except IoError as e:
+                            return fetched_final
+                        case _:
+                            raise ValueError("[ERROR] make_query(): Unhandled query.")
+        except ValueError | psycopg.InternalError as e:
             print(f"[ERROR] make_query(): Failed to execute the query.\n{e}")
 
     def check_if_exists(self) -> TupleRow:
@@ -252,7 +278,7 @@ class Database:
         Wrapper around query for checking if given table name exists.
         """
         return self.make_query(
-            "", self.table_exists_query, exists=(self._db_config["tablename"],)
+            "", self.queries["SELECT_EXISTS"], exists=(self._db_config["tablename"],)
         )[0]
 
     def set_tablename(self) -> None:
@@ -262,7 +288,7 @@ class Database:
         """
         self.make_query(
             "Table doesn't exist, making one.",
-            query=self.table_init_query,
+            query=self.queries["CREATE_TABLE"],
             tablename=(self._db_config["tablename"],),
         )
 
@@ -274,15 +300,17 @@ class Database:
         Wrapper around query for getting a batch of {batch_size}.
         """
         query = (
-            self.upvote_query
+            self.queries["SELECT_IF_UPVOTE"]
             if action == Actions.UPVOTE
-            else self.downvote_query
+            else self.queries["SELECT_IF_DOWNVOTE"]
             if action == Actions.DOWNVOTE
             else None
         )
-        assert query is not None
-        query = query.format(tablename=self._db_config["tablename"])
 
+        if query is None:
+            return (None,)
+
+        query = query.format(tablename=self._db_config["tablename"])
         return self.make_query(
             f"Getting random elements. [{self._db_config['batch_size']}]",
             query,
@@ -296,13 +324,13 @@ class Database:
         Wrapper around query for getting a random element.
         """
         return self.make_query(
-            f"Getting an element with id={id}.", self.table_select_query, id=id
+            f"Getting an element with id={id}.", self.queries["GET_BY_ID"], id=id
         )
 
     def get_random_entry(self) -> TupleRow | List[TupleRow]:
         lo, hi = self.bounds
         id = int(*np.random.randint(low=lo, high=hi, size=1))
-        query = self.table_select_query.format(tablename=self._db_config["tablename"])
+        query = self.queries["GET_BY_ID"].format(tablename=self._db_config["tablename"])
         return self.make_query(
             "Getting a random element.",
             query,
@@ -315,7 +343,7 @@ class Database:
                 dbname=self.name, user=self.user, host=self.host, port=self.port
             )
             return conn
-        except IOError as e:
+        except psycopg.errors.ConnectionTimeout as e:
             print(e)
             exit(1)
 

@@ -37,49 +37,63 @@ class VRModel:
         self.q_values: dict = defaultdict(
             lambda: np.zeros(model_config["action_space_size"])
         )
+        self.missing_genres = set()
         self.training_err = []
         # observation is the next video or something.
 
-    # TODO: SHOULD BE NAMEDTUPLE BECAUSE IT IS HARD TO READ
+    # TODO: Consider using namedtuples.
     def run(self) -> None:
         for episode in tqdm(range(self.env.nepisodes)):
             obs, _ = self.env.reset()
             done = False
             while not done:
-                # TODO: make working it, for already existing db
-                # TODO: HASH GENRES BEFORE ELSEWHERE
-                # TODO: BETTER ERROR HANDLING
                 action = self.get_action(obs)
-
-                # ------ CHANGE THIS LATER
-                obs = tuple(tuple(el) if isinstance(el, list) else el for el in obs)
-                # ------ CHANGE THIS LATER
-
                 next_obs, reward, terminated = self.env.step(action)
-
-                # ------ CHANGE THIS LATER
-                next_obs = tuple(
-                    tuple(el) if isinstance(el, list) else el for el in next_obs
-                )
-                # ------ CHANGE THIS LATER
-
                 self.update_model(obs, next_obs, action, reward, terminated)
                 done = terminated
                 obs = next_obs
                 self.update_eps()
-                # attrs = vars(self)
-                # print(", ".join(f"{key} : {value}" for key, value in attrs.items()))
 
-    def get_action(self, obs: Tuple[Any]) -> Actions:
-        if np.random.random() < self.eps:
+    # attrs = vars(self)
+    # print(", ".join(f"{key} : {value}" for key, value in attrs.items()))
+
+    def get_action(self, obs: Tuple) -> Actions:
+        """
+        Parameters:
+            - obs: Tuple: Tuple of observations used in the training.
+        Function:
+            This function is fully automated, meaning that it cannot be used
+            by a user. This function will simulate what user would choose,
+            based on the probabilities.
+        """
+        likeness = self._full_config["env"]["likeness"]
+        rnd_choice: float = np.random.random()
+        # TODO: Test more this bounds
+        if 0 <= rnd_choice <= self.eps:
             return Actions.UPVOTE if np.random.random() < 0.5 else Actions.DOWNVOTE
-        else:
+        elif self.eps < rnd_choice < min(1, self.eps + 0.25):
             # TODO: Here consider probabilities
             return (
                 Actions.UPVOTE
                 if int(np.argmax(self.q_values[obs])) == 0
                 else Actions.DOWNVOTE
             )
+        elif max(0, self.eps + 0.25) < rnd_choice < min(1, self.eps + 1):
+            genres = obs[3]
+            cum_prob = 0
+            for genre in genres:
+                if genre in likeness.keys():
+                    cum_prob += likeness[genre]
+                else:
+                    if genre not in self.missing_genres:
+                        print(f"[WARNING] get_action(): {genre} not in keys.")
+                        self.missing_genres.add(genre)
+            rnd_action = np.random.random()
+            return Actions.UPVOTE if rnd_action <= cum_prob else Actions.DOWNVOTE
+
+        else:
+            print("[INFO] get_action(): Unhandled case.")
+            return Actions.DOWNVOTE
 
     def update_model(
         self,
