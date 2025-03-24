@@ -7,7 +7,7 @@ from model.model import VRModel
 # [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
 # FILE
 __MODE_CHOICES = ["train", "validation", "test", "inference"]
-__CONFIG_FILE_PATH = Path("resource/config.json")
+__CONFIG_FILE_PATH = Path("resource/cfg/config.json")
 
 
 def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
@@ -49,6 +49,8 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
         config["paths"]["movies"] = Path(config["paths"]["movies"])
         config["paths"]["ratings"] = Path(config["paths"]["ratings"])
         config["paths"]["tags"] = Path(config["paths"]["tags"])
+        config["paths"]["queries"] = Path(config["paths"]["queries"])
+        config["paths"]["cfg"] = Path(config["paths"]["cfg"])
     except ValueError as e:
         print(e)
         exit(1)
@@ -56,6 +58,7 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def main() -> None:
+    # TODO: add logging
     parser = argparse.ArgumentParser(
         prog="Video Recommendation Model",
         description="Show user the best recommendations of movies, "

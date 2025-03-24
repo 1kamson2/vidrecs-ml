@@ -3,6 +3,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 from environment.Environment import Environment
 from tqdm import tqdm
+from utils.io import pkl_save, pkl_load
 
 from utils.enums import Actions
 
@@ -34,8 +35,16 @@ class VRModel:
         self.eps_final: float = model_config["eps_final"]
         self.gamma: float = model_config["gamma"]
         self.env: Environment = Environment(**full_config)
-        self.q_values: dict = defaultdict(
-            lambda: np.zeros(model_config["action_space_size"])
+        q_values_info = self._full_config["paths"]["q_values_load"]
+        q_values_filename, q_values_load = (
+            q_values_info["filename"],
+            q_values_info["load"],
+        )
+
+        self.q_values: dict = (
+            pkl_load(q_values_filename, self._full_config["paths"]["cfg"])
+            if q_values_load
+            else defaultdict(lambda: np.zeros(model_config["action_space_size"]))
         )
         self.missing_genres = set()
         self.training_err = []
@@ -53,6 +62,16 @@ class VRModel:
                 done = terminated
                 obs = next_obs
                 self.update_eps()
+
+        q_values_info = self._full_config["paths"]["q_values_save"]
+        q_values_filename, q_values_save = (
+            q_values_info["filename"],
+            q_values_info["save"],
+        )
+        if q_values_save:
+            pkl_save(
+                self.q_values, q_values_filename, self._full_config["paths"]["cfg"]
+            )
 
     # attrs = vars(self)
     # print(", ".join(f"{key} : {value}" for key, value in attrs.items()))

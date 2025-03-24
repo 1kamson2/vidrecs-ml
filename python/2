@@ -18,6 +18,7 @@ class Database:
         TODO: Titles appear to be very long.
         """
 
+        print(db_config)
         with open(db_config["queries"], "rb") as toml:
             queries = tomllib.load(toml)
 

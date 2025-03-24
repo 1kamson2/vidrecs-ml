@@ -10,10 +10,21 @@
     "resource": "resource/",
     "source": "src/",
     "utils": "src/utils/",
-    "links": "resource/links.csv",
-    "movies": "resource/movies.csv",
-    "ratings": "resource/ratings.csv",
-    "tags": "resource/tags.csv"
+    "cfg": "resource/cfg/",
+    "logs": "resource/logs/",
+    "queries": "resource/cfg/queries.toml",
+    "links": "resource/csv/links.csv",
+    "movies": "resource/csv/movies.csv",
+    "ratings": "resource/csv/ratings.csv",
+    "tags": "resource/csv/tags.csv",
+    "q_values_load": {
+      "filename": "dump240325_load",
+      "load": false
+    },
+    "q_values_save": {
+      "filename": "dump240325_save",
+      "save": true
+    }
   },
   "model": {
     "mode": "train",
@@ -23,7 +34,7 @@
     "eps_decay": 0.1,
     "eps_final": 0.1,
     "gamma": 0.95,
-    "nepisodes": 100,
+    "nepisodes": 10,
     "action_space_size": 2
   },
   "env": {
