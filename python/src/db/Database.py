@@ -7,17 +7,18 @@ import tomllib
 from psycopg.abc import Query
 from utils.enums import Actions
 from psycopg.rows import TupleRow
+from pathlib import Path
+from utils.log import logger_builder
+
+# [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
+# FILE
+logger = logger_builder(__name__, Path("resource/logs/"))
 
 
 class Database:
     cls_name = "MovieDB"
-    # TODO: Add logging
 
     def __init__(self, **db_config):
-        """
-        TODO: Titles appear to be very long.
-        """
-
         with open(db_config["queries"], "rb") as toml:
             queries = tomllib.load(toml)
 
@@ -55,16 +56,19 @@ class Database:
                 self.set_tablename()
             except ValueError | psycopg.DatabaseError as e:
                 print(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
+                logger.error(f"[ERROR] table_init(): Couldn't create given table.\n{e}")
                 exit(1)
 
             try:
                 # --- Load movies into the database --- #
                 print("[INFO] table_init(): Loading all movies.")
+                logger.info("[INFO] table_init(): Loading all movies.")
                 csv_files = list(self._db_config["resource"].glob("*.csv"))
                 movies_data = dict()
 
                 if self._db_config["links"] not in csv_files:
                     print("[ERROR] links.csv wasn't found.")
+                    logger.error("[ERROR] links.csv wasn't found.")
                     exit(1)
 
                 link_df = pd.read_csv(self._db_config["links"], sep=",", skiprows=0)
@@ -85,6 +89,7 @@ class Database:
 
                 if self._db_config["movies"] not in csv_files:
                     print("[ERROR] movies.csv wasn't found.")
+                    logger.error("[ERROR] movies.csv wasn't found.")
                     exit(1)
 
                 movies_df = pd.read_csv(self._db_config["movies"], sep=",", skiprows=0)
@@ -146,6 +151,7 @@ class Database:
 
             except ValueError | IndexError as e:
                 print(e)
+                logger.error(e)
                 exit(1)
 
             try:
@@ -155,8 +161,10 @@ class Database:
                             cur.execute(self.queries["INSERT_INTO"], relation)
             except IOError as e:
                 print(e)
+                logger.error(e)
                 exit(1)
             print("[INFO] table_init(): Movies loaded successfully.")
+            logger.info("[INFO] table_init(): Movies loaded successfully.")
             return
 
         # For more readibility, could be else
@@ -187,10 +195,12 @@ class Database:
                         assert fetched[0] > 0, (
                             "[ERROR] table_init(): Your database is not initialized"
                         )
-                print("[INFO} table_init(): Your database passed light test.")
+                print("[INFO] table_init(): Your database passed light test.")
+                logger.info("[INFO] table_init(): Your database passed light test.")
                 return
             except psycopg.DatabaseError | psycopg.ProgrammingError | ValueError as e:
                 print(e)
+                logger.error(e)
                 exit(1)
 
     def make_query(
@@ -216,15 +226,21 @@ class Database:
         key, *extra = kwargs.keys()
         if key not in ALLOWED_QUERIES:
             print(f"[ERROR] make_query(): '{kwargs}' is not handled by this function.")
+            logger.error(
+                f"[ERROR] make_query(): '{kwargs}' is not handled by this function."
+            )
             exit(1)
 
         if len(info) == 0:
             print("[WARNING] make_query(): No info provided.")
+            logger.error("[WARNING] make_query(): No info provided.")
         else:
             print(f"[INFO] make_query(): {info}")
+            logger.info(f"[INFO] make_query(): {info}")
 
         if len(query) == 0:
             print("[ERROR] make_query(): No query provided.")
+            logger.error("[ERROR] make_query(): No query provided.")
             return (None,)
 
         try:
@@ -270,6 +286,7 @@ class Database:
                             raise ValueError("[ERROR] make_query(): Unhandled query.")
         except ValueError | psycopg.InternalError as e:
             print(f"[ERROR] make_query(): Failed to execute the query.\n{e}")
+            logger.error(f"[ERROR] make_query(): Failed to execute the query.\n{e}")
 
     def check_if_exists(self) -> TupleRow:
         """
@@ -327,6 +344,11 @@ class Database:
         )
 
     def get_random_entry(self) -> TupleRow | List[TupleRow]:
+        """
+        Function:
+        Wrapper around query for getting a random entry in bounds, that were
+        found while initializing the class.
+        """
         lo, hi = self.bounds
         id = int(*np.random.randint(low=lo, high=hi, size=1))
         query = self.queries["GET_BY_ID"].format(tablename=self._db_config["tablename"])
@@ -337,6 +359,11 @@ class Database:
         )
 
     def get_connection(self):
+        """
+        Function:
+        Wrapper around getting the connection to the database. Database
+        credentials are found in the config.
+        """
         try:
             conn = psycopg.connect(
                 dbname=self.name, user=self.user, host=self.host, port=self.port
@@ -344,6 +371,7 @@ class Database:
             return conn
         except psycopg.errors.ConnectionTimeout as e:
             print(e)
+            logger.error(e)
             exit(1)
 
     def __repr__(self):

@@ -2,7 +2,9 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict
-from model.model import VRModel
+from utils.listener import server_main
+import asyncio
+import threading
 
 # [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
 # FILE
@@ -14,7 +16,6 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
     """
     Parameters:
         - args: This parameter should contain user's passed parameters.
-
     This function validates what user passed, also does some config's
     variables normalization, that wasn't possible on JSON's level.
     """
@@ -58,7 +59,6 @@ def args_validation(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def main() -> None:
-    # TODO: add logging
     parser = argparse.ArgumentParser(
         prog="Video Recommendation Model",
         description="Show user the best recommendations of movies, "
@@ -74,8 +74,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     full_config = args_validation(args)
-    model = VRModel(**full_config)
-    model.run()
+    # model = VRModel(**full_config)
+    # model.run()
+    server_thread = threading.Thread(
+        target=lambda: asyncio.run(server_main(full_config["listener"]))
+    )
+    server_thread.start()
 
 
 if __name__ == "__main__":

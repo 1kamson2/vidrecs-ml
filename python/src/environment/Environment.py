@@ -2,8 +2,14 @@ from psycopg.rows import TupleRow
 from utils.enums import Actions
 from typing import List, Tuple
 from db.Database import Database
+from pathlib import Path
 
+from utils.log import logger_builder
+
+# [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
+# FILE
 TOLERANCE = 1e-3
+logger = logger_builder(__name__, Path("resource/logs/"))
 
 
 class Environment:
@@ -44,6 +50,12 @@ class Environment:
                 "equal to 1. "
             )
             print(f"        {1 - TOLERANCE} <= {cum_prob} <= {1 + TOLERANCE} ")
+            logger.error(
+                "[ERROR] validate_members(): Cumulative probability doesn't "
+                "equal to 1. "
+            )
+            logger.error(f"        {1 - TOLERANCE} <= {cum_prob} <= {1 + TOLERANCE} ")
+
             exit(1)
 
     def reset(self) -> Tuple:
@@ -54,51 +66,14 @@ class Environment:
             print(
                 f"[ERROR] reset(): Record contain wrong types.\n        {type(obs[3])}"
             )
+            logger.error(
+                f"[ERROR] reset(): Record contain wrong types.\n        {type(obs[3])}"
+            )
             exit(1)
         info = f"[INFO] First entry is: {obs}"
         return (obs, info)
 
     def step(self, action: Actions) -> Tuple:
-        """
-        TODO:
-        For now this will return randomly observations etc, but realistically it
-        should be based on our choices.
-        Say our action is UPVOTE:
-            That means the user liked the content, therefore we should tell the
-            environment that he is likely to enjoy more of the movie with such
-            genres. Therefore based on the q-values, we return the genres that
-            are more likely to be watched.
-        Say our action is DOWNVOTE:
-            The same, but it will discourage the environment. (or something
-            similar to this?)
-        In general the environment must act upon given actions, then choose the
-        best "observation" based on those q_values.
-        Policy should be looking for the action based on the actions and
-        simulate if user liked the movies recommended.
-        Check classifiers
-        The classifier really must be thought of, because some q-values should
-        be rather negative, if we wanted to create a policy where the bigger sum
-        the better - that means we should sum all categories (if they were
-        always positive) because adding more positive values always yields the
-        higher sum than less.
-        Terminated if we hit some bound of recommendations etc.
-        """
-
-        """
-        Algorithm: Naive.
-        Probably we should use embedding (check on that), but for now, assume we
-        get movie with genres A, B, ..., Z, for the sake of the example we will
-        consider only A, B, C. They are sorted, so we will always yield the same
-        results. If user upvoted this, that means we should assume that he
-        liked, all genres. The next observation, should be the one with the
-        highest q-value and have A, B, C, or (A, B), (B, C), (A, C) or (A, B,
-        C). This operations should be fast because:
-            - For now the database is not that big.
-            - We operate on sets, which are fast operations.
-        Otherwise, we will send out the movies randomly.
-        How this will work out, will be checked in action.
-        The observations will be choosen randomly 
-        """
         if self.record_tracker > self._full_config["model"]["batch_size"] - 1:
             self.batch = self._db.get_batch(self.last_genres, action)
             self.record_tracker: int = 0
@@ -117,7 +92,6 @@ class Environment:
         return obs, reward, terminated
 
     def __repr__(self) -> str:
-        # This dict is too long to display, so it is shortened.
         upvote_prob_keys = list(self.upvote_prob.keys())
         upvote_prob_str = f"{upvote_prob_keys[0]}: {self.upvote_prob[upvote_prob_keys[0]]}, ..., {upvote_prob_keys[-1]}: {self.upvote_prob[upvote_prob_keys[-1]]}"
         rows = {

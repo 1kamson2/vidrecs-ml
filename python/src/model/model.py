@@ -4,8 +4,13 @@ import numpy as np
 from environment.Environment import Environment
 from tqdm import tqdm
 from utils.io import pkl_save, pkl_load
-
+from utils.log import logger_builder
+from pathlib import Path
 from utils.enums import Actions
+
+# [WARNING]: DO NOT REUSE THOSE VARIABLES, THOSE ARE MADE TO USE ONLY IN THIS
+# FILE
+logger = logger_builder("__name__", Path("resource/logs/"))
 
 
 class VRModel:
@@ -48,9 +53,7 @@ class VRModel:
         )
         self.missing_genres = set()
         self.training_err = []
-        # observation is the next video or something.
 
-    # TODO: Consider using namedtuples.
     def run(self) -> None:
         for episode in tqdm(range(self.env.nepisodes)):
             obs, _ = self.env.reset()
@@ -73,9 +76,6 @@ class VRModel:
                 self.q_values, q_values_filename, self._full_config["paths"]["cfg"]
             )
 
-    # attrs = vars(self)
-    # print(", ".join(f"{key} : {value}" for key, value in attrs.items()))
-
     def get_action(self, obs: Tuple) -> Actions:
         """
         Parameters:
@@ -87,11 +87,9 @@ class VRModel:
         """
         likeness = self._full_config["env"]["likeness"]
         rnd_choice: float = np.random.random()
-        # TODO: Test more this bounds
         if 0 <= rnd_choice <= self.eps:
             return Actions.UPVOTE if np.random.random() < 0.5 else Actions.DOWNVOTE
         elif self.eps < rnd_choice < min(1, self.eps + 0.25):
-            # TODO: Here consider probabilities
             return (
                 Actions.UPVOTE
                 if int(np.argmax(self.q_values[obs])) == 0
@@ -106,12 +104,14 @@ class VRModel:
                 else:
                     if genre not in self.missing_genres:
                         print(f"[WARNING] get_action(): {genre} not in keys.")
+                        logger.warning(f"[WARNING] get_action(): {genre} not in keys.")
                         self.missing_genres.add(genre)
             rnd_action = np.random.random()
             return Actions.UPVOTE if rnd_action <= cum_prob else Actions.DOWNVOTE
 
         else:
             print("[INFO] get_action(): Unhandled case.")
+            logger.info("[INFO] get_action(): Unhandled case.")
             return Actions.DOWNVOTE
 
     def update_model(
@@ -122,6 +122,9 @@ class VRModel:
         reward: float,
         terminated: bool,
     ) -> None:
+        """
+        Alternatives: KNN
+        """
         action_value = action.value
         fut_q_val = (not terminated) * np.max(self.q_values[next_obs])
         temp_diff = reward + self.gamma * fut_q_val * self.q_values[obs][action_value]
