@@ -53,8 +53,26 @@ class VRModel:
         )
         self.missing_genres = set()
         self.training_err = []
+        self.user_first_choice = True
+        self.user_prev_obs: Tuple
+
+    def run_user_choice(self, action: Actions) -> Tuple:
+        if self.user_first_choice:
+            obs, _ = self.env.reset()
+            self.user_prev_obs = obs
+            self.user_first_choice = False
+            return obs
+
+        next_obs, reward, terminated = self.env.step(action)
+        self.update_model(self.user_prev_obs, next_obs, action, reward, terminated)
+        self.user_prev_obs = next_obs
+        return next_obs
 
     def run(self) -> None:
+        """
+        Function:
+            Run fully automated recommendation algorithm.
+        """
         for episode in tqdm(range(self.env.nepisodes)):
             obs, _ = self.env.reset()
             done = False

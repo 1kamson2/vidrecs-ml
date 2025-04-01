@@ -41,8 +41,12 @@ button.action-button {
   color: gray;
 }
 
-.action-button:hover {
-  background-color: #45a049;
+#like:hover {
+  background-color: green;
+}
+
+#dislike:hover {
+  background-color: red;
 }
 
 #main-renderer {
@@ -67,7 +71,7 @@ div.button-flex {
 #second-buffer {
   position: relative;
   opacity: 0;
-  z-index: -1;
+  z-index: 1;
 }
 
 @media (max-width: 768px) {}
