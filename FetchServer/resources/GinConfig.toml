@@ -1,0 +1,26 @@
+#------------------------------------------------------#
+# This is configuration for GIN API to make it work
+# properly.
+#------------------------------------------------------#
+# Tables:
+#   Service: This defines the startup properties for
+#   GIN. The property `cmds` defines `api` endpoints 
+#   we want to expose to other users.
+#
+#   AllowedHosts: Add hosts that will have access
+#   to all `api` endpoints. 
+#------------------------------------------------------#
+
+[Service]
+host = "localhost"
+port = 8080
+cmds = ["echo", "cats"]
+
+
+[[AllowedHosts]]
+host = "localhost"
+port = 1111
+
+[[AllowedHosts]]
+host = "localhost"
+port = 2222

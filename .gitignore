@@ -1,0 +1,20 @@
+# Rust
+Cargo.lock
+target/
+
+# Python
+__pycache__/
+logs/
+poetry.lock
+
+# CSharp
+bin/
+obj/
+lib/
+
+# Golang
+go.sum
+
+# Tools
+*.sln
+.vscode/

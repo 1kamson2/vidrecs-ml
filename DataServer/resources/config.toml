@@ -1,0 +1,31 @@
+#
+# Configuration for Data Server.
+#
+# Server:
+#   Define server's hostname and port.
+#   host: define hostname
+#   port: define port
+#   Default: `localhost:9999`
+#
+# Connections:
+#   Define permissions for each host.
+#   sender: full specification of a host trying to connect.
+#           Example: sender = "localhost:42"
+#   allow: list permissions for a given host
+#   Default: If a host is not found there it will be automatically refused.
+
+[Server]
+host = "localhost"
+port = 9999
+
+[[Connections]]
+sender = "REFUSE"
+allow = ["REFUSE"]
+
+[[Connections]]
+sender = "localhost:XXXX"
+allow = ["/api/echo"]
+
+[[Connections]]
+sender = "localhost:XXXX"
+allow = ["/api/echo"]

@@ -1,0 +1,21 @@
+blinker @ file:///croot/blinker_1737448726027/work
+click @ file:///croot/click_1744271578095/work
+Flask @ file:///croot/flask_1737454299809/work
+iniconfig @ file:///home/linux1/recipes/ci/iniconfig_1610983019677/work
+itsdangerous @ file:///io/buildout/croot/itsdangerous_1732920215085/work
+Jinja2 @ file:///croot/jinja2_1741710844255/work
+MarkupSafe @ file:///croot/markupsafe_1738584038848/work
+numpy==2.2.6
+packaging @ file:///croot/packaging_1734472117206/work
+pandas==2.2.3
+pluggy @ file:///croot/pluggy_1733169602837/work
+psycopg==3.2.9
+pytest @ file:///croot/pytest_1738938843180/work
+python-dateutil==2.9.0.post0
+pytz==2025.2
+setuptools==78.1.1
+six==1.17.0
+tqdm==4.67.1
+tzdata==2025.2
+Werkzeug @ file:///croot/werkzeug_1737448706492/work
+wheel==0.45.1
