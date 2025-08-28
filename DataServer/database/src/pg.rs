@@ -1,7 +1,11 @@
 use diesel::{prelude::*, result::Error};
 
 use crate::models::{
-    fetching::{VideoResponse, VideoSnapshot},
+    fetching::{
+        Comment, NewComment, NewThumbnail, Thumbnail, VideoResponse, VideoSnapshot,
+        comments::{self, who_commented},
+        thumbnails,
+    },
     user::{User, user_credentials},
 };
 
@@ -81,9 +85,9 @@ pub fn insert_videos(videos: Vec<VideoResponse>) -> bool {
             }
         };
 
-        let _ = match diesel::insert_into(video_snapshots::table)
+        let new_snapshot = match diesel::insert_into(video_snapshots::table)
             .values(NewVideoSnapshot {
-                video_id: new_vid.id,
+                video_id: new_vid.id.clone(),
                 when_fetched: video.published,
                 title: video.title,
                 views: video.views,
@@ -94,12 +98,52 @@ pub fn insert_videos(videos: Vec<VideoResponse>) -> bool {
             .returning(VideoSnapshot::as_returning())
             .get_result(conn)
         {
+            Ok(res) => res,
+            Err(e) => {
+                println!(
+                    "WARNING: Add proper logging there.\nCouldn't insert because: {}",
+                    e
+                );
+                return false;
+            }
+        };
+
+        for comment in video.comments {
+            let _ = match diesel::insert_into(comments::table)
+                .values(NewComment {
+                    video_id: new_vid.video_id.clone(),
+                    who_commented: comment.who_commented,
+                    content: comment.content,
+                    when_posted: comment.when_posted,
+                })
+                .returning(Comment::as_returning())
+                .get_result(conn)
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    println!(
+                        "WARNING: Add proper logging there.\nCouldn't insert because: {}",
+                        e
+                    );
+                }
+            };
+        }
+
+        let _ = match diesel::insert_into(thumbnails::table)
+            .values(NewThumbnail {
+                video_id: new_vid.video_id.clone(),
+                thumbnail_path: video.thumbnail,
+            })
+            .returning(Thumbnail::as_returning())
+            .get_result(conn)
+        {
             Ok(_) => {}
             Err(e) => {
                 println!(
                     "WARNING: Add proper logging there.\nCouldn't insert because: {}",
                     e
                 );
+                return false;
             }
         };
     }

@@ -21,17 +21,10 @@ async fn main() {
         .route("/api/login", post(login))
         .route("/api/register", post(register))
         .route("/api/request_game", post(request_game))
-        .route("/api/admin/fillup", post(_fill_up))
-        .route("/api/sync", get(not_implemented))
-        .route("/api/check_health", get(not_implemented))
-        .route("/api/echo", get(not_implemented));
+        .route("/api/admin/fillup", post(_fill_up));
 
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", args.host, args.port))
         .await
         .unwrap();
     axum::serve(listener, router).await.unwrap();
-}
-
-async fn not_implemented() -> Json<Value> {
-    Json(json!({"content": "Not implemented, sorry!"}))
 }

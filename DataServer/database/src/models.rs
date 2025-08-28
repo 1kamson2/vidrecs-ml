@@ -134,6 +134,44 @@ pub mod fetching {
         pub dislikes: i64,
     }
 
+    diesel::table! {
+        comments (comment_id) {
+            comment_id -> BigSerial,
+            video_id -> Char,
+            who_commented -> Char,
+            content -> Char,
+            when_posted -> Timestamp
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Insertable, Clone)]
+    #[diesel(table_name = comments)]
+    #[diesel(check_for_backend(diesel::pg::Pg))]
+    pub struct NewComment {
+        pub video_id: String,
+        pub who_commented: String,
+        pub content: String,
+        pub when_posted: NaiveDateTime,
+    }
+
+    #[derive(Serialize, Selectable, Queryable)]
+    #[diesel(table_name = comments)]
+    #[diesel(check_for_backend(diesel::pg::Pg))]
+    pub struct Comment {
+        pub comment_id: i64,
+        pub video_id: String,
+        pub who_commented: String,
+        pub content: String,
+        pub when_posted: NaiveDateTime,
+    }
+
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct FetchedComment {
+        pub who_commented: String,
+        pub content: String,
+        pub when_posted: NaiveDateTime,
+    }
+
     #[derive(Serialize, Deserialize, Clone)]
     pub struct VideoResponse {
         pub id: String,
@@ -145,6 +183,32 @@ pub mod fetching {
         pub likes: i64,
         pub dislikes: i64,
         pub thumbnail: String,
+        pub comments: Vec<FetchedComment>,
+    }
+
+    diesel::table! {
+        thumbnails (id) {
+            id -> BigSerial,
+            video_id -> Char,
+            thumbnail_path -> Char,
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Insertable)]
+    #[diesel(table_name = thumbnails)]
+    #[diesel(check_for_backend(diesel::pg::Pg))]
+    pub struct NewThumbnail {
+        pub video_id: String,
+        pub thumbnail_path: String,
+    }
+
+    #[derive(Serialize, Selectable, Queryable)]
+    #[diesel(table_name = thumbnails)]
+    #[diesel(check_for_backend(diesel::pg::Pg))]
+    pub struct Thumbnail {
+        pub id: i64,
+        pub video_id: String,
+        pub thumbnail_path: String,
     }
 }
 

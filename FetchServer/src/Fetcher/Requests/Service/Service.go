@@ -15,16 +15,23 @@ type Service struct {
 	MaxResults int64
 }
 
+type Comment struct {
+	WhoCommented string `json:"who_commented"`
+	Content      string `json:"content"`
+	WhenPosted   string `json:"when_posted"`
+}
+
 type Video struct {
-	Id          string `json:"id"`
-	ChannelId   string `json:"channelid"`
-	PublishedAt string `json:"published"`
-	Title       string `json:"title"`
-	Views       uint64 `json:"views"`
-	Description string `json:"description"`
-	Likes       uint64 `json:"likes"`
-	Dislikes    uint64 `json:"dislikes"`
-	Thumbnail   string `json:"thumbnail"`
+	Id          string     `json:"id"`
+	ChannelId   string     `json:"channelid"`
+	PublishedAt string     `json:"published"`
+	Title       string     `json:"title"`
+	Views       uint64     `json:"views"`
+	Description string     `json:"description"`
+	Likes       uint64     `json:"likes"`
+	Dislikes    uint64     `json:"dislikes"`
+	Thumbnail   string     `json:"thumbnail"`
+	Comments    []*Comment `json:"comments"`
 }
 
 type GameForm struct {
@@ -87,8 +94,8 @@ func (self *Service) FetchVideosId(query *string) ([]string, error) {
 
 func (self *Service) FetchVideos(ids []string) ([]*Video, error) {
 	// TODO: add validation later
-	query := self.Client.Videos.List([]string{"id", "snippet", "statistics"})
-	videos_info, err := query.Do(
+	videoQuery := self.Client.Videos.List([]string{"id", "snippet", "statistics"})
+	videosInfo, err := videoQuery.Do(
 		googleapi.QueryParameter("id", ids...),
 	)
 
@@ -97,9 +104,29 @@ func (self *Service) FetchVideos(ids []string) ([]*Video, error) {
 	}
 
 	videos := []*Video{}
-	for _, video := range videos_info.Items {
+	for idx, video := range videosInfo.Items {
 		snippet := video.Snippet
 		stats := video.Statistics
+		comments := []*Comment{}
+
+		commentQuery := self.Client.CommentThreads.List([]string{"snippet"})
+		commentsInfo, err := commentQuery.Do(
+			googleapi.QueryParameter("videoId", ids[idx]),
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range commentsInfo.Items {
+			comment := item.Snippet.TopLevelComment.Snippet
+			comments = append(comments, &Comment{
+				WhoCommented: comment.AuthorDisplayName,
+				WhenPosted:   strings.Trim(comment.PublishedAt, "Z"),
+				Content:      comment.TextDisplay,
+			})
+		}
+
 		videos = append(videos, &Video{
 			Id:          video.Id,
 			ChannelId:   snippet.ChannelId,
@@ -110,6 +137,7 @@ func (self *Service) FetchVideos(ids []string) ([]*Video, error) {
 			Likes:       stats.LikeCount,
 			Dislikes:    stats.DislikeCount,
 			Thumbnail:   snippet.Thumbnails.Default.Url,
+			Comments:    comments,
 		})
 	}
 	return videos, nil

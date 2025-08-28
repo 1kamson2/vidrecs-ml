@@ -43,8 +43,6 @@ func New(service *Service.Service) *gin.Engine {
 
 		var message *Fetcher.Message = Fetcher.New(Fetcher.WithContent(&form))
 		err := json.NewDecoder(ctx.Request.Body).Decode(message)
-		fmt.Println(message)
-		fmt.Println(form)
 
 		if err != nil {
 			message.IntoResponse(err)
@@ -63,7 +61,6 @@ func New(service *Service.Service) *gin.Engine {
 		}
 
 		query := form.Request
-		fmt.Println(query)
 
 		videos, err := service.Search(query)
 
@@ -75,41 +72,12 @@ func New(service *Service.Service) *gin.Engine {
 			)
 		}
 
-		fmt.Println(videos)
-
 		message.IntoResponse(videos)
-		fmt.Println(message)
 		ctx.JSON(
 			http.StatusOK,
 			message,
 		)
 	})
-
-	// router.GET("/api/test_cats", func(ctx *gin.Context) {
-	// 	content, err := service.Search("cute cats")
-	//
-	// 	if err != nil {
-	// 		ctx.JSON(
-	// 			http.StatusForbidden,
-	//
-	// 			gin.H{
-	// 				"error": err,
-	// 			})
-	// 	}
-	//
-	// 	message := Fetcher.New(
-	// 		Fetcher.WithId(1),
-	// 		Fetcher.WithSender("localhost"),
-	// 		Fetcher.WithReceiver(ctx.ClientIP()),
-	// 		Fetcher.WithContent(content),
-	// 	)
-	//
-	// 	ctx.JSON(
-	// 		http.StatusOK,
-	// 		gin.H{
-	// 			"content": message,
-	// 		})
-	// })
 
 	return router
 }
