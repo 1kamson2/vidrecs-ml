@@ -1,20 +1,11 @@
-from model.model import VRModel
-from utils.config.argument_parsing import Config
-from utils.listener import server_main
-import threading
-import asyncio
+from flask import Flask
 
+app = Flask(__name__)
 
-def main() -> None:
-    config = Config() 
-    # WARNING: This might not work, backtrack there if fails.
-    model = VRModel(**config.content)
-    # model.run()
-    server_thread = threading.Thread(
-        target=lambda: asyncio.run(server_main(config.content["listener"], model))
-    )
-    server_thread.start()
+@app.route("/api/recommendation", methods=["POST"])
+def api_recommendation() -> str:
+    return "Recommending"
 
-
-if __name__ == "__main__":
-    main()
+@app.route("/api/train", methods=["POST"])
+def api_train() -> str:
+    return "Training"

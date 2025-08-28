@@ -1,7 +1,17 @@
+use std::{
+    env::current_dir,
+    fs,
+    path::{Path, PathBuf},
+};
+
 use super::models::user::NewUser;
-use axum::{Json, extract};
+use axum::{
+    Json,
+    extract::{self},
+};
 use chrono::prelude::*;
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -46,30 +56,32 @@ pub async fn login(extract::Json(payload): extract::Json<Message<LoginContent>>)
     // TODO: The id should be present in the request
     // WARNING: Success hold to the last minute right before sending.
     let _ = match validate_request(&payload).await {
-        Err(err) => return Json(json! {payload.make_message::<String>(err)}),
+        Err(err) => return Json(json! {payload.into_response::<String>(err)}),
         Ok(res) => res,
     };
 
     let content = payload.content.as_ref().unwrap();
     match fetch_user(&content.username, &content.password) {
         None => Json(json! {
-            payload.make_message::<String>(String::from(INVALID_CREDENTIALS))
+            payload.into_response::<String>(String::from(INVALID_CREDENTIALS))
         }),
 
-        Some(_) => Json(json! {payload.make_message::<String>(Uuid::new_v4().into())
-        }),
+        Some(_) => Json(
+            json! {payload.into_response::<String>(Uuid::new_v4().into())
+            },
+        ),
     }
 }
 
 pub async fn register(extract::Json(payload): extract::Json<Message<NewUser>>) -> Json<Value> {
     let _ = match validate_request(&payload).await {
-        Err(err) => return Json(json! {payload.make_message::<String>(err)}),
+        Err(err) => return Json(json! {payload.into_response::<String>(err)}),
         Ok(res) => res,
     };
 
     let content = payload.content.as_ref().unwrap();
     if !content.validate() {
-        return Json(json! {payload.make_message::<String>(String::from(INVALID_CREDENTIALS))});
+        return Json(json! {payload.into_response::<String>(String::from(INVALID_CREDENTIALS))});
     }
 
     match insert_user(
@@ -79,18 +91,18 @@ pub async fn register(extract::Json(payload): extract::Json<Message<NewUser>>) -
         content.age.clone(),
     ) {
         false => Json(json! {
-        payload.make_message::<String>(String::from(INVALID_CREDENTIALS))
+        payload.into_response::<String>(String::from(INVALID_CREDENTIALS))
         }),
 
         true => Json(json! {
-            payload.make_message::<String>("New user created!".into())
+            payload.into_response::<String>("New user created!".into())
         }),
     }
 }
 
 pub async fn request_game(extract::Json(payload): extract::Json<Message<GameForm>>) -> Json<Value> {
     let _ = match validate_request(&payload).await {
-        Err(err) => return Json(json! {payload.make_message::<String>(err)}),
+        Err(err) => return Json(json! {payload.into_response::<String>(err)}),
         Ok(res) => res,
     };
 
@@ -105,4 +117,47 @@ pub async fn request_game(extract::Json(payload): extract::Json<Message<GameForm
     let content: Vec<VideoResponse> = resp.content.clone().unwrap();
     insert_videos(content); // TODO: Add error handling 
     Json(json! {resp})
+}
+
+#[derive(Deserialize, Debug)]
+struct FillupConfig {
+    pub channel_keywords: Vec<String>,
+    pub title_keywords: Vec<String>,
+    pub description_keywords: Vec<String>,
+    pub genre_keywords: Vec<String>,
+}
+pub async fn _fill_up(extract::Json(payload): extract::Json<Message<GameForm>>) {
+    // TODO: Before calling that add check if user can request this method
+    let cwd: PathBuf = current_dir().unwrap();
+    let resources: &Path = Path::new("database/resources/fillup_keywords.toml");
+    let config_file: PathBuf = cwd.join(resources);
+    let content = fs::read_to_string(&config_file).unwrap();
+    let cfg: FillupConfig = toml::from_str(&content).unwrap();
+    /* For better verbosity move the payload into another variable */
+    let mut request = payload;
+    for field in cfg.channel_keywords {
+        request.into_pass(
+            "localhost:8080".into(),
+            GameForm::new(&field, "placeholder"),
+        );
+
+        let _ = match validate_request(&request).await {
+            Err(err) => {
+                println!("{err}");
+                continue;
+            }
+            Ok(res) => res,
+        };
+
+        let req = Client::new()
+            .post("http://localhost:8080/api/search")
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+
+        let resp: Message<Vec<VideoResponse>> = req.json().await.unwrap();
+        let content: Vec<VideoResponse> = resp.content.clone().unwrap();
+        insert_videos(content); // TODO: Add error handling 
+    }
 }

@@ -66,13 +66,22 @@ pub fn insert_videos(videos: Vec<VideoResponse>) -> bool {
         &mut establish_connection("postgres".into(), "postgres".into(), "GAMES_STATS".into());
 
     for video in videos {
-        let new_vid = diesel::insert_into(videos::table)
+        let new_vid = match diesel::insert_into(videos::table)
             .values(NewVideo { video_id: video.id })
             .returning(Video::as_returning())
             .get_result(conn)
-            .ok()
-            .unwrap();
-        diesel::insert_into(video_snapshots::table)
+        {
+            Ok(new_vid) => new_vid,
+            Err(e) => {
+                println!(
+                    "WARNING: Add proper logging there.\nCouldn't insert because: {}",
+                    e
+                );
+                continue;
+            }
+        };
+
+        let _ = match diesel::insert_into(video_snapshots::table)
             .values(NewVideoSnapshot {
                 video_id: new_vid.id,
                 when_fetched: video.published,
@@ -84,8 +93,15 @@ pub fn insert_videos(videos: Vec<VideoResponse>) -> bool {
             })
             .returning(VideoSnapshot::as_returning())
             .get_result(conn)
-            .ok()
-            .unwrap();
+        {
+            Ok(_) => {}
+            Err(e) => {
+                println!(
+                    "WARNING: Add proper logging there.\nCouldn't insert because: {}",
+                    e
+                );
+            }
+        };
     }
     return true;
 }

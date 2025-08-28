@@ -1,7 +1,7 @@
 use axum::routing::post;
 use axum::{Router, body::Body, response::Json, routing::get};
 use clap::Parser;
-use database::api::{login, register, request_game};
+use database::api::{_fill_up, login, register, request_game};
 use database::requests::Message;
 use serde_json::{Value, json};
 
@@ -21,6 +21,7 @@ async fn main() {
         .route("/api/login", post(login))
         .route("/api/register", post(register))
         .route("/api/request_game", post(request_game))
+        .route("/api/admin/fillup", post(_fill_up))
         .route("/api/sync", get(not_implemented))
         .route("/api/check_health", get(not_implemented))
         .route("/api/echo", get(not_implemented));

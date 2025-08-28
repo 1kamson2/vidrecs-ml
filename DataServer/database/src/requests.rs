@@ -28,6 +28,20 @@ pub struct GameForm {
     pub token: String,
 }
 
+impl GameForm {
+    pub fn new(request: &str, token: &str) -> Self {
+        GameForm {
+            request: request.into(),
+            token: token.into(),
+        }
+    }
+
+    pub fn with_request(&mut self, request: String) -> &mut Self {
+        self.request = request;
+        self
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Message<T> {
     pub id: u64,
@@ -56,7 +70,7 @@ impl<T> Message<T> {
         }
     }
 
-    pub fn make_message<S>(mut self, response: S) -> Message<S> {
+    pub fn into_response<S>(mut self, response: S) -> Message<S> {
         /*
          * Construct Message as response to given request or request to given response.
          * It consumes the entire request making it unusable later.
@@ -78,6 +92,27 @@ impl<T> Message<T> {
             MessageStatus::Success,
             response,
         );
+    }
+
+    pub fn into_pass(&mut self, receiver: &str, request: T) -> &mut Self {
+        /*
+         * Construct Message to pass it down to another endpoint.
+         * It doesn't consume the request making it usable later.
+         *
+         *  Arguments:
+         *      response: What should be the content of the message.
+         *
+         *  Returns:
+         *      Response to request.
+         */
+
+        // We swap the values between sender and receiver.
+        // We use sender as receiver and receiver as a sender.
+        self.id = self.id + 1;
+        self.sender = receiver.into();
+        std::mem::swap(&mut self.sender, &mut self.receiver);
+        self.content = Some(request);
+        self
     }
 
     pub fn with_id(&mut self, id: u64) -> &mut Self {
